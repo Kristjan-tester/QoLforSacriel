@@ -1,0 +1,7 @@
+version=47
+title=Quality of Life for Sacriel
+description=Make life better for playing Project Zomboid.
+description=
+description=Mod ID: QoLforSacriel
+tags=
+visibility=public
