@@ -6,7 +6,18 @@ local lastDiscomfortByPlayer = {}
 
 local function getWornItemAt(wornItems, index)
     if wornItems.getItemByIndex then
-        return wornItems:getItemByIndex(index)
+        local item = wornItems:getItemByIndex(index)
+        if item then
+            return item
+        end
+
+        -- Some builds expose 1-based getItemByIndex; try both before falling back.
+        if index >= 0 then
+            item = wornItems:getItemByIndex(index + 1)
+            if item then
+                return item
+            end
+        end
     end
 
     local entry = wornItems:get(index)
@@ -14,7 +25,14 @@ local function getWornItemAt(wornItems, index)
         return entry:getItem()
     end
 
-    return nil
+    if not entry and index >= 0 then
+        entry = wornItems:get(index + 1)
+        if entry and entry.getItem then
+            return entry:getItem()
+        end
+    end
+
+    return entry
 end
 
 local function isArmorItem(item)
@@ -59,13 +77,14 @@ local function isWearingArmor(playerObj)
 end
 
 local function clampToPositiveNumber(value, fallback)
-    if value == nil or value ~= value then
+    local n = tonumber(value)
+    if not n or n ~= n then
         return fallback
     end
-    if value <= 0 then
+    if n <= 0 then
         return fallback
     end
-    return value
+    return n
 end
 
 local function clamp01(value, fallback)
@@ -188,6 +207,10 @@ end
 
 local function onPlayerUpdate(playerObj, settings, logger)
     if not playerObj or playerObj:isDead() then
+        return
+    end
+
+    if settings.isEnabled("QoLforSacriel_EnableArmorMood") ~= true then
         return
     end
 

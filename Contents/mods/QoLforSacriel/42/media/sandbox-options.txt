@@ -88,6 +88,33 @@ option QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount {
 	translation = QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount,
 }
 
+option QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinPuddle {
+	type = double,
+	min = 0.09,
+	max = 0.49,
+	default = 0.20,
+	page = QoLforSacriel,
+	translation = QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinPuddle,
+}
+
+option QoLforSacriel_UIFixes_WaterDepthHints_MediumMinPuddle {
+	type = double,
+	min = 0.10,
+	max = 0.99,
+	default = 0.50,
+	page = QoLforSacriel,
+	translation = QoLforSacriel_UIFixes_WaterDepthHints_MediumMinPuddle,
+}
+
+option QoLforSacriel_UIFixes_WaterDepthHints_DeepMinPuddle {
+	type = double,
+	min = 0.11,
+	max = 1.0,
+	default = 0.75,
+	page = QoLforSacriel,
+	translation = QoLforSacriel_UIFixes_WaterDepthHints_DeepMinPuddle,
+}
+
 option QoLforSacriel_UIFixes_WaterDepthHints_MediumMinWaterCount {
 	type = integer,
 	min = 0,
@@ -128,7 +155,7 @@ option QoLforSacriel_DragDrop_RampSeconds {
 	type = integer,
 	min = 10,
 	max = 1200,
-	default = 180,
+	default = 120,
 	page = QoLforSacriel,
 	translation = QoLforSacriel_DragDrop_RampSeconds,
 }
@@ -169,16 +196,72 @@ option QoLforSacriel_Equipment_PresetCount {
 	type = integer,
 	min = 1,
 	max = 8,
-	default = 3,
+	default = 2,
 	page = QoLforSacriel,
 	translation = QoLforSacriel_Equipment_PresetCount,
+}
+
+option QoLforSacriel_Equipment_PresetHotkey1 {
+	type = string,
+	default = F1,
+	page = QoLforSacriel,
+	translation = QoLforSacriel_Equipment_PresetHotkey1,
+}
+
+option QoLforSacriel_Equipment_PresetHotkey2 {
+	type = string,
+	default = F2,
+	page = QoLforSacriel,
+	translation = QoLforSacriel_Equipment_PresetHotkey2,
+}
+
+option QoLforSacriel_Equipment_PresetHotkey3 {
+	type = string,
+	default = F3,
+	page = QoLforSacriel,
+	translation = QoLforSacriel_Equipment_PresetHotkey3,
+}
+
+option QoLforSacriel_Equipment_PresetHotkey4 {
+	type = string,
+	default = F4,
+	page = QoLforSacriel,
+	translation = QoLforSacriel_Equipment_PresetHotkey4,
+}
+
+option QoLforSacriel_Equipment_PresetHotkey5 {
+	type = string,
+	default = F5,
+	page = QoLforSacriel,
+	translation = QoLforSacriel_Equipment_PresetHotkey5,
+}
+
+option QoLforSacriel_Equipment_PresetHotkey6 {
+	type = string,
+	default = F6,
+	page = QoLforSacriel,
+	translation = QoLforSacriel_Equipment_PresetHotkey6,
+}
+
+option QoLforSacriel_Equipment_PresetHotkey7 {
+	type = string,
+	default = F7,
+	page = QoLforSacriel,
+	translation = QoLforSacriel_Equipment_PresetHotkey7,
+}
+
+option QoLforSacriel_Equipment_PresetHotkey8 {
+	type = string,
+	default = F8,
+	page = QoLforSacriel,
+	translation = QoLforSacriel_Equipment_PresetHotkey8,
 }
 
 option QoLforSacriel_ArmorMood_BaseReductionFactor {
 	type = double,
 	min = 0.0,
 	max = 1.0,
-	default = 0.6,
+	default = 0.95,
 	page = QoLforSacriel,
 	translation = QoLforSacriel_ArmorMood_BaseReductionFactor,
 }

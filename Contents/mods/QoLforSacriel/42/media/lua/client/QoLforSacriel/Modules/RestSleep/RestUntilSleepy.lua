@@ -126,6 +126,10 @@ local function onSelect(playerObj, actionOption, settings, logger)
 end
 
 local function onFillWorldObjectContextMenu(playerIndex, context, worldobjects, test, settings, logger)
+    if settings.isEnabled("QoLforSacriel_EnableRestSleep") ~= true then
+        return
+    end
+
     if test then
         return
     end
@@ -181,6 +185,11 @@ local function onPlayerUpdate(playerObj, settings, logger)
     end
 
     local idx = playerObj:getPlayerNum() or 0
+    if settings.isEnabled("QoLforSacriel_EnableRestSleep") ~= true then
+        activeByPlayer[idx] = nil
+        return
+    end
+
     local state = activeByPlayer[idx]
     if not state then
         return

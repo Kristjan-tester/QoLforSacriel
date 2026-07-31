@@ -30,6 +30,11 @@ local function applyCorpseDragEnduranceCompensation(playerObj, settings)
     end
 
     local playerIndex = playerObj:getPlayerNum() or 0
+    if settings.isEnabled("QoLforSacriel_EnableDragDrop") ~= true then
+        corpseDragByPlayer[playerIndex] = nil
+        return
+    end
+
     local isDragging = playerObj:isDraggingCorpse()
     local isGrabAction = isGrabCorpseActionActive(playerObj)
 

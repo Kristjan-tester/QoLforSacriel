@@ -1,10 +1,12 @@
 local Settings = {}
+local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
 
 local defaults = {
     QoLforSacriel_EnableMod = true,
     QoLforSacriel_DebugLogs = false,
 
     QoLforSacriel_EnableUIFixes = true,
+    QoLforSacriel_UIFixes_EnableSkillFilter = true,
     QoLforSacriel_EnableDragDrop = true,
     QoLforSacriel_EnableRestSleep = true,
     QoLforSacriel_EnableEquipment = true,
@@ -14,27 +16,129 @@ local defaults = {
 
     QoLforSacriel_UIFixes_SkillFilterIncludePartialXP = true,
     QoLforSacriel_UIFixes_EnableWaterDepthHints = true,
+    QoLforSacriel_UIFixes_EnableSoundDirection = true,
     QoLforSacriel_UIFixes_WaterDepthHints_OverlayRadius = 3,
     QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount = 2,
+    QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinPuddle = 0.20,
+    QoLforSacriel_UIFixes_WaterDepthHints_MediumMinPuddle = 0.50,
+    QoLforSacriel_UIFixes_WaterDepthHints_DeepMinPuddle = 0.75,
     QoLforSacriel_UIFixes_WaterDepthHints_MediumMinWaterCount = 4,
     QoLforSacriel_UIFixes_WaterDepthHints_DeepMinWaterCount = 7,
 
+    QoLforSacriel_SoundIntel_Enabled = false,
+    QoLforSacriel_SoundIntel_UseAmbientCorrelation = true,
+    QoLforSacriel_SoundIntel_ZMarkerEnabled = true,
+    QoLforSacriel_SoundIntel_EnableInferredZombie = true,
+    QoLforSacriel_SoundIntel_EnableInferredAnimal = true,
+    QoLforSacriel_SoundIntel_ShowSourceLabel = true,
+    QoLforSacriel_SoundIntel_ShowOutsideHearing = false,
+    QoLforSacriel_SoundIntel_ArrowScalePercent = 100,
+    QoLforSacriel_SoundIntel_ArrowScalePreset = 2,
+    QoLforSacriel_SoundIntel_MaxTrackedCues = 24,
+    QoLforSacriel_SoundIntel_CueDurationMs = 1400,
+    QoLforSacriel_SoundIntel_Category_PlayerLocal = true,
+    QoLforSacriel_SoundIntel_Category_Zombie = true,
+    QoLforSacriel_SoundIntel_Category_Combat = true,
+    QoLforSacriel_SoundIntel_Category_Environment = true,
+    QoLforSacriel_SoundIntel_Category_Vehicle = true,
+    QoLforSacriel_SoundIntel_Category_AlarmAndSignal = true,
+    QoLforSacriel_SoundIntel_Category_Meta = true,
+    QoLforSacriel_SoundIntel_Category_Unknown = true,
+    QoLforSacriel_SoundIntel_Category_Inferred = true,
+
     QoLforSacriel_DragDrop_FatigueStartMultiplier = 0.35,
     QoLforSacriel_DragDrop_FatigueMaxMultiplier = 1.00,
-    QoLforSacriel_DragDrop_RampSeconds = 90,
+    QoLforSacriel_DragDrop_RampSeconds = 120,
 
     QoLforSacriel_RestSleep_SleepyThreshold = 0.30,
     QoLforSacriel_RestSleep_InterruptOnMoveInput = true,
     QoLforSacriel_RestSleep_InterruptOnPanic = true,
     QoLforSacriel_RestSleep_PanicInterruptLevel = 50,
 
-    QoLforSacriel_Equipment_PresetCount = 3,
+    QoLforSacriel_Equipment_PresetCount = 2,
+    QoLforSacriel_Equipment_PresetHotkey1 = "F1",
+    QoLforSacriel_Equipment_PresetHotkey2 = "F2",
+    QoLforSacriel_Equipment_PresetHotkey3 = "F3",
+    QoLforSacriel_Equipment_PresetHotkey4 = "F4",
+    QoLforSacriel_Equipment_PresetHotkey5 = "F5",
+    QoLforSacriel_Equipment_PresetHotkey6 = "F6",
+    QoLforSacriel_Equipment_PresetHotkey7 = "F7",
+    QoLforSacriel_Equipment_PresetHotkey8 = "F8",
 
-    QoLforSacriel_ArmorMood_BaseReductionFactor = 0.60,
+    QoLforSacriel_ArmorMood_BaseReductionFactor = 0.95,
     QoLforSacriel_ArmorMood_UpdateCooldownSeconds = 2,
 }
 
+local MOD_OPTION_KEY_BY_SETTING = {
+    QoLforSacriel_EnableMod = "enableMod",
+    QoLforSacriel_DebugLogs = "debugLogs",
+    QoLforSacriel_EnableUIFixes = "enableUIFixes",
+    QoLforSacriel_UIFixes_EnableSkillFilter = "enableSkillFilter",
+    QoLforSacriel_UIFixes_SkillFilterIncludePartialXP = "skillFilterIncludePartialXP",
+    QoLforSacriel_UIFixes_EnableWaterDepthHints = "enableWaterDepthHints",
+    QoLforSacriel_UIFixes_WaterDepthHints_OverlayRadius = "waterDepthOverlayRadius",
+    QoLforSacriel_UIFixes_EnableSoundDirection = "enableSoundDirection",
+    QoLforSacriel_EnableDragDrop = "enableDragDrop",
+    QoLforSacriel_DragDrop_FatigueStartMultiplier = "dragDropFatigueStartMultiplier",
+    QoLforSacriel_DragDrop_FatigueMaxMultiplier = "dragDropFatigueMaxMultiplier",
+    QoLforSacriel_DragDrop_RampSeconds = "dragDropRampSeconds",
+    QoLforSacriel_EnableRestSleep = "enableRestSleep",
+    QoLforSacriel_RestSleep_SleepyThreshold = "restSleepSleepyThreshold",
+    QoLforSacriel_RestSleep_InterruptOnMoveInput = "restSleepInterruptOnMoveInput",
+    QoLforSacriel_RestSleep_InterruptOnPanic = "restSleepInterruptOnPanic",
+    QoLforSacriel_RestSleep_PanicInterruptLevel = "restSleepPanicInterruptLevel",
+    QoLforSacriel_EnableEquipment = "enableEquipment",
+    QoLforSacriel_Equipment_EnablePresets = "equipmentEnablePresets",
+    QoLforSacriel_Equipment_PresetCount = "equipmentPresetCount",
+    QoLforSacriel_Equipment_PresetHotkey1 = "equipmentPresetHotkey1",
+    QoLforSacriel_Equipment_PresetHotkey2 = "equipmentPresetHotkey2",
+    QoLforSacriel_Equipment_PresetHotkey3 = "equipmentPresetHotkey3",
+    QoLforSacriel_Equipment_PresetHotkey4 = "equipmentPresetHotkey4",
+    QoLforSacriel_Equipment_PresetHotkey5 = "equipmentPresetHotkey5",
+    QoLforSacriel_Equipment_PresetHotkey6 = "equipmentPresetHotkey6",
+    QoLforSacriel_Equipment_PresetHotkey7 = "equipmentPresetHotkey7",
+    QoLforSacriel_Equipment_PresetHotkey8 = "equipmentPresetHotkey8",
+    QoLforSacriel_EnableArmorMood = "enableArmorMood",
+    QoLforSacriel_ArmorMood_BaseReductionFactor = "armorMoodBaseReductionFactor",
+    QoLforSacriel_ArmorMood_UpdateCooldownSeconds = "armorMoodUpdateCooldownSeconds",
+}
+
+local function getModOptionValue(name)
+    if not PZAPI or not PZAPI.ModOptions or not PZAPI.ModOptions.getOptions then
+        return nil
+    end
+
+    local options = PZAPI.ModOptions:getOptions(MOD_OPTIONS_ID)
+    if not options or not options.getOption then
+        return nil
+    end
+
+    local optionId = MOD_OPTION_KEY_BY_SETTING[name]
+    if not optionId then
+        return nil
+    end
+
+    local option = options:getOption(optionId)
+    if not option or not option.getValue then
+        return nil
+    end
+
+    local ok, value = pcall(function()
+        return option:getValue()
+    end)
+    if not ok then
+        return nil
+    end
+
+    return value
+end
+
 function Settings.get(name)
+    local modOptionValue = getModOptionValue(name)
+    if modOptionValue ~= nil then
+        return modOptionValue
+    end
+
     local vars = SandboxVars
     if vars ~= nil and vars[name] ~= nil then
         return vars[name]

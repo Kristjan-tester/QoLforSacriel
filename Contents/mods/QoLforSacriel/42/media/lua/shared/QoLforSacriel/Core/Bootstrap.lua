@@ -24,6 +24,7 @@ end
 local function registerModules()
     local skillFilter = safeRequire("QoLforSacriel/Modules/UIFixes/SkillFilter")
     local waterDepthHints = safeRequire("QoLforSacriel/Modules/UIFixes/WaterDepthHints")
+    local soundDirection = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundDirection")
     local dragDrop = safeRequire("QoLforSacriel/Modules/DragDrop/DragDropFatigue")
     local restSleep = safeRequire("QoLforSacriel/Modules/RestSleep/RestUntilSleepy")
     local equipmentPresets = safeRequire("QoLforSacriel/Modules/Equipment/EquipmentPresets")
@@ -34,6 +35,9 @@ local function registerModules()
     end
     if waterDepthHints and waterDepthHints.init then
         registry.register("UIFixes.WaterDepthHints", "QoLforSacriel_EnableUIFixes", waterDepthHints.init)
+    end
+    if soundDirection and soundDirection.init then
+        registry.register("UIFixes.SoundDirection", "QoLforSacriel_EnableUIFixes", soundDirection.init)
     end
     if dragDrop and dragDrop.init then
         registry.register("DragDrop.Fatigue", "QoLforSacriel_EnableDragDrop", dragDrop.init)
@@ -61,12 +65,6 @@ local function onGameStart()
     end
 
     logger.info("Runtime " .. tostring(version.runtime) .. " startup")
-
-    if not settings.isEnabled(nil) then
-        logger.info("Mod disabled by sandbox option")
-        initialized = true
-        return
-    end
 
     registerModules()
     registry.initAll(settings, logger)

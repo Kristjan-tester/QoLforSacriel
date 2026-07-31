@@ -177,6 +177,10 @@ function SkillFilter.init(settings, logger)
             return allPerks
         end
 
+        if settings.isEnabled("QoLforSacriel_EnableUIFixes") ~= true or settings.get("QoLforSacriel_UIFixes_EnableSkillFilter") ~= true then
+            return allPerks
+        end
+
         if self.qolShowOnlyLeveled == nil then
             self.qolShowOnlyLeveled = showOnlyLeveledEnabled
         end
@@ -210,12 +214,23 @@ function SkillFilter.init(settings, logger)
 
     ISCharacterInfo.createChildren = function(self)
         originalCreateChildren(self)
-        ensureShowOnlyLeveledCheckbox(self)
+        if settings.isEnabled("QoLforSacriel_EnableUIFixes") == true and settings.get("QoLforSacriel_UIFixes_EnableSkillFilter") == true then
+            ensureShowOnlyLeveledCheckbox(self)
+        elseif self.qolShowOnlyLeveledCheckbox and self.qolShowOnlyLeveledCheckbox.setVisible then
+            self.qolShowOnlyLeveledCheckbox:setVisible(false)
+        end
     end
 
     ISCharacterInfo.render = function(self)
-        ensureShowOnlyLeveledCheckbox(self)
-        updateShowOnlyLeveledCheckboxPosition(self)
+        if settings.isEnabled("QoLforSacriel_EnableUIFixes") == true and settings.get("QoLforSacriel_UIFixes_EnableSkillFilter") == true then
+            ensureShowOnlyLeveledCheckbox(self)
+            updateShowOnlyLeveledCheckboxPosition(self)
+            if self.qolShowOnlyLeveledCheckbox and self.qolShowOnlyLeveledCheckbox.setVisible then
+                self.qolShowOnlyLeveledCheckbox:setVisible(true)
+            end
+        elseif self.qolShowOnlyLeveledCheckbox and self.qolShowOnlyLeveledCheckbox.setVisible then
+            self.qolShowOnlyLeveledCheckbox:setVisible(false)
+        end
         originalRender(self)
     end
 

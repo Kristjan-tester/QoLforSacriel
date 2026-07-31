@@ -7,8 +7,9 @@ local DEFAULT_SHALLOW_MIN_WATER_COUNT = 2
 local DEFAULT_MEDIUM_MIN_WATER_COUNT = 4
 local DEFAULT_DEEP_MIN_WATER_COUNT = 7
 local PUDDLE_MIN = 0.09
-local PUDDLE_MEDIUM_MIN = 0.50
-local PUDDLE_DEEP_MIN = 0.75
+local DEFAULT_SHALLOW_MIN_PUDDLE = 0.20
+local DEFAULT_MEDIUM_MIN_PUDDLE = 0.50
+local DEFAULT_DEEP_MIN_PUDDLE = 0.75
 local OVERLAY_REFRESH_MS = 500
 local OVERLAY_MARGIN = 64
 
@@ -44,12 +45,48 @@ local function clampInteger(value, fallback, minValue, maxValue)
     return n
 end
 
+local function clampNumber(value, fallback, minValue, maxValue)
+    local n = tonumber(value)
+    if not n then
+        n = fallback
+    end
+    if n < minValue then
+        return minValue
+    end
+    if n > maxValue then
+        return maxValue
+    end
+    return n
+end
+
 local function getWaterDepthConfig(settings)
+    local shallowPuddleMin = clampNumber(
+        settings.get("QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinPuddle"),
+        DEFAULT_SHALLOW_MIN_PUDDLE,
+        PUDDLE_MIN,
+        1.0
+    )
+    local mediumPuddleMin = clampNumber(
+        settings.get("QoLforSacriel_UIFixes_WaterDepthHints_MediumMinPuddle"),
+        DEFAULT_MEDIUM_MIN_PUDDLE,
+        shallowPuddleMin,
+        1.0
+    )
+    local deepPuddleMin = clampNumber(
+        settings.get("QoLforSacriel_UIFixes_WaterDepthHints_DeepMinPuddle"),
+        DEFAULT_DEEP_MIN_PUDDLE,
+        mediumPuddleMin,
+        1.0
+    )
+
     return {
         radius = clampInteger(settings.get("QoLforSacriel_UIFixes_WaterDepthHints_OverlayRadius"), 3, 1, 6),
         shallowMin = clampInteger(settings.get("QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount"), DEFAULT_SHALLOW_MIN_WATER_COUNT, 0, 25),
         mediumMin = clampInteger(settings.get("QoLforSacriel_UIFixes_WaterDepthHints_MediumMinWaterCount"), DEFAULT_MEDIUM_MIN_WATER_COUNT, 0, 25),
         deepMin = clampInteger(settings.get("QoLforSacriel_UIFixes_WaterDepthHints_DeepMinWaterCount"), DEFAULT_DEEP_MIN_WATER_COUNT, 0, 25),
+        shallowPuddleMin = shallowPuddleMin,
+        mediumPuddleMin = mediumPuddleMin,
+        deepPuddleMin = deepPuddleMin,
     }
 end
 
@@ -232,11 +269,12 @@ local function getPuddleValue(square)
     return value
 end
 
-local function isPuddleSquare(square)
-    return getPuddleValue(square) > PUDDLE_MIN
+local function isPuddleSquare(square, minValue)
+    local threshold = tonumber(minValue) or PUDDLE_MIN
+    return getPuddleValue(square) >= threshold
 end
 
-local function resolveWaterSource(square, logger)
+local function resolveWaterSource(square, logger, config)
     if not square then
         return nil, nil
     end
@@ -248,7 +286,8 @@ local function resolveWaterSource(square, logger)
         return square, "natural"
     end
 
-    if isPuddleSquare(square) then
+    local shallowPuddleMin = config and config.shallowPuddleMin or PUDDLE_MIN
+    if isPuddleSquare(square, shallowPuddleMin) then
         if logger then
             logger.debug("UIFixes.WaterDepthHints source=puddle at " .. fmtSquare(square) .. " puddles=" .. tostring(getPuddleValue(square)))
         end
@@ -269,13 +308,19 @@ local function classifyDepth(square, sourceKind, logger, config)
 
     if sourceKind == "puddle" then
         local puddleValue = getPuddleValue(square)
-        if puddleValue >= PUDDLE_DEEP_MIN then
+        if puddleValue < config.shallowPuddleMin then
+            if logger then
+                logger.debug("UIFixes.WaterDepthHints depth=none source=puddle value=" .. tostring(puddleValue) .. " below shallowMin=" .. tostring(config.shallowPuddleMin) .. " at " .. fmtSquare(square))
+            end
+            return nil
+        end
+        if puddleValue >= config.deepPuddleMin then
             if logger then
                 logger.debug("UIFixes.WaterDepthHints depth=deep source=puddle value=" .. tostring(puddleValue) .. " at " .. fmtSquare(square))
             end
             return "deep"
         end
-        if puddleValue >= PUDDLE_MEDIUM_MIN then
+        if puddleValue >= config.mediumPuddleMin then
             if logger then
                 logger.debug("UIFixes.WaterDepthHints depth=medium source=puddle value=" .. tostring(puddleValue) .. " at " .. fmtSquare(square))
             end
@@ -322,7 +367,10 @@ local function classifyDepth(square, sourceKind, logger, config)
 end
 
 local function shouldRenderForPlayer(playerIndex, settings, logger)
-    if settings.get("QoLforSacriel_UIFixes_EnableWaterDepthHints") ~= true then
+    if settings.isEnabled("QoLforSacriel_EnableUIFixes") ~= true then
+        return false
+    end
+    if settings.isEnabled("QoLforSacriel_UIFixes_EnableWaterDepthHints") ~= true then
         return false
     end
     if not isSearchModeEnabled(playerIndex) then
@@ -371,7 +419,7 @@ local function refreshOverlayData(playerObj, playerIndex, state, logger, setting
                 local sq = getSquare(cx + dx, cy + dy, cz)
                 if sq then
                     scanned = scanned + 1
-                    local sourceSquare, sourceKind = resolveWaterSource(sq, nil)
+                    local sourceSquare, sourceKind = resolveWaterSource(sq, nil, config)
                     if sourceSquare then
                         local depthKind = classifyDepth(sourceSquare, sourceKind, nil, config)
                         if depthKind then
