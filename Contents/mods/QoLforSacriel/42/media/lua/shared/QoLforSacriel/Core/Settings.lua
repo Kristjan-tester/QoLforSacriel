@@ -15,7 +15,7 @@ local defaults = {
     QoLforSacriel_UIFixes_SkillFilterIncludePartialXP = true,
     QoLforSacriel_UIFixes_EnableWaterDepthHints = true,
     QoLforSacriel_UIFixes_WaterDepthHints_OverlayRadius = 3,
-    QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount = 1,
+    QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount = 2,
     QoLforSacriel_UIFixes_WaterDepthHints_MediumMinWaterCount = 4,
     QoLforSacriel_UIFixes_WaterDepthHints_DeepMinWaterCount = 7,
 

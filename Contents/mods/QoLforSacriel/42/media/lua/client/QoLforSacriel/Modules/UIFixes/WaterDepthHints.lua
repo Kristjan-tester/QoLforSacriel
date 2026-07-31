@@ -3,7 +3,7 @@ local WaterDepthHints = {}
 local installed = false
 local focusPatched = false
 local originalUpdateSearchFocusCategories = nil
-local DEFAULT_SHALLOW_MIN_WATER_COUNT = 1
+local DEFAULT_SHALLOW_MIN_WATER_COUNT = 2
 local DEFAULT_MEDIUM_MIN_WATER_COUNT = 4
 local DEFAULT_DEEP_MIN_WATER_COUNT = 7
 local PUDDLE_MIN = 0.09
@@ -364,8 +364,6 @@ local function refreshOverlayData(playerObj, playerIndex, state, logger, setting
 
     local scanned = 0
     local accepted = 0
-    local skippedShallow = 0
-
     state.count = 0
     for dy = -config.radius, config.radius do
         for dx = -config.radius, config.radius do
@@ -376,7 +374,7 @@ local function refreshOverlayData(playerObj, playerIndex, state, logger, setting
                     local sourceSquare, sourceKind = resolveWaterSource(sq, nil)
                     if sourceSquare then
                         local depthKind = classifyDepth(sourceSquare, sourceKind, nil, config)
-                        if depthKind and depthKind ~= "shallow" then
+                        if depthKind then
                             accepted = accepted + 1
                             state.count = state.count + 1
                             local entry = state.entries[state.count] or {}
@@ -387,8 +385,6 @@ local function refreshOverlayData(playerObj, playerIndex, state, logger, setting
                             entry.kind = depthKind
                             entry.source = sourceKind
                             entry.text = getOverlayText(depthKind)
-                        elseif depthKind == "shallow" then
-                            skippedShallow = skippedShallow + 1
                         end
                     end
                 end

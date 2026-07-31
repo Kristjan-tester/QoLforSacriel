@@ -83,7 +83,7 @@ option QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount {
 	type = integer,
 	min = 0,
 	max = 25,
-	default = 1,
+	default = 2,
 	page = QoLforSacriel,
 	translation = QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount,
 }
