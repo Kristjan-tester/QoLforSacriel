@@ -26,6 +26,7 @@ local function registerModules()
     local waterDepthHints = safeRequire("QoLforSacriel/Modules/UIFixes/WaterDepthHints")
     local soundDirection = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundDirection")
     local furnitureNudge = safeRequire("QoLforSacriel/Modules/FurnitureNudge/FurnitureNudge")
+    local lightSwitchToggle = safeRequire("QoLforSacriel/Modules/LightSwitchToggle/LightSwitchToggle")
     local dragDrop = safeRequire("QoLforSacriel/Modules/DragDrop/DragDropFatigue")
     local restSleep = safeRequire("QoLforSacriel/Modules/RestSleep/RestUntilSleepy")
     local equipmentPresets = safeRequire("QoLforSacriel/Modules/Equipment/EquipmentPresets")
@@ -42,6 +43,9 @@ local function registerModules()
     end
     if furnitureNudge and furnitureNudge.init then
         registry.register("FurnitureNudge.Base", "QoLforSacriel_EnableFurnitureNudge", furnitureNudge.init)
+    end
+    if lightSwitchToggle and lightSwitchToggle.init then
+        registry.register("LightSwitchToggle.Base", "QoLforSacriel_EnableLightSwitchToggle", lightSwitchToggle.init)
     end
     if dragDrop and dragDrop.init then
         registry.register("DragDrop.Fatigue", "QoLforSacriel_EnableDragDrop", dragDrop.init)

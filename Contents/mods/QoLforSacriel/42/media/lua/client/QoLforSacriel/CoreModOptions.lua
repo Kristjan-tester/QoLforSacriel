@@ -1,7 +1,7 @@
 local CoreModOptions = {}
 local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
 
-local function registerPresetBinding(bindingName, keyCode, shift, ctrl, alt)
+local function registerBinding(bindingName, keyCode, shift, ctrl, alt)
     local core = getCore and getCore()
     if not core or not core.addKeyBinding then
         return
@@ -12,7 +12,7 @@ end
 
 local function syncPresetBindingFromOption(option, fallbackName, fallbackKey)
     if not option then
-        registerPresetBinding(fallbackName, fallbackKey, false, true, false)
+        registerBinding(fallbackName, fallbackKey, false, true, false)
         return
     end
 
@@ -28,7 +28,7 @@ local function syncPresetBindingFromOption(option, fallbackName, fallbackKey)
         ctrl = ctrl == true
     end
 
-    registerPresetBinding(bindingName, keyCode, shift, ctrl, alt)
+    registerBinding(bindingName, keyCode, shift, ctrl, alt)
 end
 
 local function syncPresetBindings(options)
@@ -46,6 +46,14 @@ local function syncPresetBindings(options)
     syncPresetBindingFromOption(options:getOption("equipmentPresetHotkey8"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey8"), Keyboard.KEY_F8)
 end
 
+local function syncLightSwitchToggleBinding(options)
+    if not options or not options.getOption then
+        return
+    end
+
+    syncPresetBindingFromOption(options:getOption("lightSwitchToggleHotkey"), getText("UI_QoLforSacriel_Modules_LightSwitchToggleHotkey"), Keyboard.KEY_F)
+end
+
 function CoreModOptions.register(logger)
     if not PZAPI or not PZAPI.ModOptions or not PZAPI.ModOptions.create then
         if logger then
@@ -57,6 +65,7 @@ function CoreModOptions.register(logger)
     local options = PZAPI.ModOptions:getOptions(MOD_OPTIONS_ID)
     if options then
         syncPresetBindings(options)
+        syncLightSwitchToggleBinding(options)
         return options
     end
 
@@ -155,12 +164,24 @@ function CoreModOptions.register(logger)
     options:addTickBox("furnitureNudgeBlockOnRugs", "UI_QoLforSacriel_Modules_FurnitureNudgeBlockOnRugs", false, "UI_QoLforSacriel_Modules_FurnitureNudgeBlockOnRugs_Tooltip")
 
     options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_LightSwitchToggleTitle")
+    options:addTickBox("enableLightSwitchToggle", "UI_QoLforSacriel_Modules_EnableLightSwitchToggle", true, "UI_QoLforSacriel_Modules_EnableLightSwitchToggle_Tooltip")
+    local lightSwitchToggleHotkeyName = getText("UI_QoLforSacriel_Modules_LightSwitchToggleHotkey")
+    local lightSwitchToggleHotkey = options:addKeyBind("lightSwitchToggleHotkey", lightSwitchToggleHotkeyName, Keyboard.KEY_F, "UI_QoLforSacriel_Modules_LightSwitchToggleHotkey_Tooltip")
+    lightSwitchToggleHotkey.ctrl = true
+    lightSwitchToggleHotkey.shift = false
+    lightSwitchToggleHotkey.alt = false
+    options:addTextEntry("lightSwitchToggleRange", "UI_QoLforSacriel_Modules_LightSwitchToggleRange", "1", "UI_QoLforSacriel_Modules_LightSwitchToggleRange_Tooltip")
+    options:addTickBox("lightSwitchToggleRequireSameRoom", "UI_QoLforSacriel_Modules_LightSwitchToggleRequireSameRoom", true, "UI_QoLforSacriel_Modules_LightSwitchToggleRequireSameRoom_Tooltip")
+
+    options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_ArmorMoodTitle")
     options:addTickBox("enableArmorMood", "UI_QoLforSacriel_Modules_EnableArmorMood", true, "UI_QoLforSacriel_Modules_EnableArmorMood_Tooltip")
     options:addTextEntry("armorMoodBaseReductionFactor", "UI_QoLforSacriel_Modules_ArmorMoodBaseReductionFactor", "0.95", "UI_QoLforSacriel_Modules_ArmorMoodBaseReductionFactor_Tooltip")
     options:addTextEntry("armorMoodUpdateCooldownSeconds", "UI_QoLforSacriel_Modules_ArmorMoodUpdateCooldownSeconds", "2", "UI_QoLforSacriel_Modules_ArmorMoodUpdateCooldownSeconds_Tooltip")
 
     syncPresetBindings(options)
+    syncLightSwitchToggleBinding(options)
 
     return options
 end
