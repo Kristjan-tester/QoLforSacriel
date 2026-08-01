@@ -3,6 +3,83 @@ local RestUntilSleepy = {}
 local installed = false
 local activeByPlayer = {}
 local PAIN_INTERRUPT_LEVEL = 1
+local REST_SPEED_MULTIPLIER = 20
+local NORMAL_SPEED_MULTIPLIER = 1
+local REST_SPEED_SETTLE_SECONDS = 0.35
+
+local function applyGameSpeed(multiplier)
+    local targetMultiplier = tonumber(multiplier) or NORMAL_SPEED_MULTIPLIER
+    if targetMultiplier < 1 then
+        targetMultiplier = 1
+    end
+
+    local targetMode = 1
+    if targetMultiplier >= 40 then
+        targetMode = 4
+    elseif targetMultiplier >= 20 then
+        targetMode = 3
+    elseif targetMultiplier >= 5 then
+        targetMode = 2
+    end
+
+    local controls = nil
+    if UIManager then
+        if UIManager.getSpeedControls then
+            local okControls, speedControls = pcall(function()
+                return UIManager.getSpeedControls()
+            end)
+            if okControls then
+                controls = speedControls
+            end
+        end
+        if not controls and UIManager.speedControls then
+            controls = UIManager.speedControls
+        end
+    end
+
+    if controls and controls.SetCurrentGameSpeed then
+        pcall(function()
+            controls:SetCurrentGameSpeed(targetMode)
+        end)
+    end
+
+    local gameTime = getGameTime and getGameTime()
+    if gameTime and gameTime.setMultiplier then
+        pcall(function()
+            gameTime:setMultiplier(targetMultiplier)
+        end)
+    elseif setGameSpeed then
+        pcall(function()
+            setGameSpeed(targetMultiplier)
+        end)
+    end
+end
+
+local function getSafeMoodleLevel(playerObj, moodleType, fallback)
+    if not playerObj or not moodleType then
+        return fallback or 0
+    end
+
+    local moodles = playerObj:getMoodles()
+    if not moodles then
+        return fallback or 0
+    end
+
+    local ok, level = pcall(function()
+        return moodles:getMoodleLevel(moodleType)
+    end)
+
+    if not ok then
+        return fallback or 0
+    end
+
+    local numeric = tonumber(level)
+    if not numeric then
+        return fallback or 0
+    end
+
+    return numeric
+end
 
 local function getLabel()
     local translated = getTextOrNull("UI_QoLforSacriel_RestUntilSleepy")
@@ -61,18 +138,66 @@ local function resolveRelevantActionOption(menu)
         return nil
     end
 
-    local fallbackSleep = nil
     for _, option in ipairs(menu.options) do
         local actionFn = getActionFunction(option)
         if actionFn == ISWorldObjectContextMenu.onRest then
             return option
         end
-        if actionFn == ISWorldObjectContextMenu.onSleep and fallbackSleep == nil then
-            fallbackSleep = option
+    end
+
+    return nil
+end
+
+local function hasRelevantActionOption(menu)
+    if not menu or not menu.options then
+        return false
+    end
+
+    for _, option in ipairs(menu.options) do
+        local actionFn = getActionFunction(option)
+        if actionFn == ISWorldObjectContextMenu.onRest or actionFn == ISWorldObjectContextMenu.onSleep then
+            return true
         end
     end
 
-    return fallbackSleep
+    return false
+end
+
+local function isCurrentlyResting(playerObj)
+    if not playerObj then
+        return false
+    end
+
+    local isResting = playerObj.isResting and playerObj:isResting()
+    return playerObj:isSitOnGround() or playerObj:isSittingOnFurniture() or isResting
+end
+
+local function hasTimedActionInProgress(playerObj)
+    if not playerObj or not ISTimedActionQueue or not ISTimedActionQueue.getTimedActionQueue then
+        return false
+    end
+
+    local queue = ISTimedActionQueue.getTimedActionQueue(playerObj)
+    return queue and queue.queue and queue.queue[1] ~= nil
+end
+
+local function beginRestUntilSleepy(playerObj, settings, forceStartedRest)
+    local idx = playerObj:getPlayerNum() or 0
+    local threshold = tonumber(settings.get("QoLforSacriel_RestSleep_SleepyThreshold")) or 0.3
+    threshold = math.max(0.0, math.min(1.0, threshold))
+    local startedRest = forceStartedRest == true or isCurrentlyResting(playerObj)
+    local now = getTimestamp()
+
+    activeByPlayer[idx] = {
+        threshold = threshold,
+        debugEnabled = settings.get("QoLforSacriel_DebugLogs") == true,
+        startFatigue = playerObj:getStats():get(CharacterStat.FATIGUE),
+        startTs = now,
+        startedRest = startedRest,
+        speedBoostApplied = false,
+        restDetectedTs = startedRest and now or nil,
+        requireRestSettle = forceStartedRest ~= true,
+    }
 end
 
 local function stopRest(playerObj, state, logger, reason)
@@ -85,11 +210,7 @@ local function stopRest(playerObj, state, logger, reason)
         playerObj:setVariable("forceGetUp", true)
     end
 
-    if setGameSpeed then
-        pcall(function()
-            setGameSpeed(1)
-        end)
-    end
+    applyGameSpeed(NORMAL_SPEED_MULTIPLIER)
 
     if state and state.debugEnabled then
         local currentFatigue = playerObj:getStats():get(CharacterStat.FATIGUE)
@@ -102,27 +223,24 @@ local function onSelect(playerObj, actionOption, settings, logger)
         return
     end
 
-    if not invokeOption(actionOption) then
-        logger.warn("RestUntilSleepy could not run mapped rest/sleep action")
+    if actionOption == nil then
+        -- Sleep-only submenus can occur while already resting; arm directly.
+        beginRestUntilSleepy(playerObj, settings, true)
         return
     end
 
-    local idx = playerObj:getPlayerNum() or 0
-    local threshold = tonumber(settings.get("QoLforSacriel_RestSleep_SleepyThreshold")) or 0.3
-    threshold = math.max(0.0, math.min(1.0, threshold))
+    if isCurrentlyResting(playerObj) then
+        beginRestUntilSleepy(playerObj, settings)
+        return
+    end
 
     local actionFn = getActionFunction(actionOption)
-    if actionFn ~= ISWorldObjectContextMenu.onRest then
+    if actionFn ~= ISWorldObjectContextMenu.onRest or not invokeOption(actionOption) then
+        logger.warn("RestUntilSleepy could not run mapped rest action")
         return
     end
 
-    activeByPlayer[idx] = {
-        threshold = threshold,
-        debugEnabled = settings.get("QoLforSacriel_DebugLogs") == true,
-        startFatigue = playerObj:getStats():get(CharacterStat.FATIGUE),
-        startTs = getTimestamp(),
-        startedRest = false,
-    }
+    beginRestUntilSleepy(playerObj, settings)
 end
 
 local function onFillWorldObjectContextMenu(playerIndex, context, worldobjects, test, settings, logger)
@@ -143,7 +261,8 @@ local function onFillWorldObjectContextMenu(playerIndex, context, worldobjects, 
         if topOption.subOption then
             local subMenu = context:getSubMenu(topOption.subOption)
             local actionOption = resolveRelevantActionOption(subMenu)
-            if actionOption and not subMenu:getOptionFromName(getLabel()) then
+            local canShowWhenResting = isCurrentlyResting(playerObj) and hasRelevantActionOption(subMenu)
+            if (actionOption or canShowWhenResting) and not subMenu:getOptionFromName(getLabel()) then
                 subMenu:addOption(getLabel(), playerObj, function(p, mappedOption)
                     onSelect(p, mappedOption, settings, logger)
                 end, actionOption)
@@ -170,13 +289,8 @@ local function getPanicValue(playerObj)
         return stats:getPanic()
     end
 
-    local moodles = playerObj:getMoodles()
-    if moodles then
-        local moodleLevel = moodles:getMoodleLevel(MoodleType.PANIC)
-        return math.max(0, moodleLevel) * 25
-    end
-
-    return 0
+    local moodleLevel = getSafeMoodleLevel(playerObj, MoodleType.PANIC, 0)
+    return math.max(0, moodleLevel) * 25
 end
 
 local function onPlayerUpdate(playerObj, settings, logger)
@@ -201,6 +315,7 @@ local function onPlayerUpdate(playerObj, settings, logger)
         local isResting = playerObj.isResting and playerObj:isResting()
         if playerObj:isSitOnGround() or playerObj:isSittingOnFurniture() or isResting then
             state.startedRest = true
+            state.restDetectedTs = getTimestamp()
         elseif getTimestamp() - (state.startTs or 0) > 15 then
             activeByPlayer[idx] = nil
             return
@@ -209,6 +324,26 @@ local function onPlayerUpdate(playerObj, settings, logger)
 
     if not state.startedRest then
         return
+    end
+
+    if state.speedBoostApplied ~= true then
+        local canApplySpeedBoost = true
+        if state.requireRestSettle == true then
+            if hasTimedActionInProgress(playerObj) then
+                canApplySpeedBoost = false
+            else
+                local restDetectedTs = state.restDetectedTs or getTimestamp()
+                state.restDetectedTs = restDetectedTs
+                if getTimestamp() - restDetectedTs < REST_SPEED_SETTLE_SECONDS then
+                    canApplySpeedBoost = false
+                end
+            end
+        end
+
+        if canApplySpeedBoost then
+            applyGameSpeed(REST_SPEED_MULTIPLIER)
+            state.speedBoostApplied = true
+        end
     end
 
     if fatigue >= state.threshold then
@@ -236,7 +371,7 @@ local function onPlayerUpdate(playerObj, settings, logger)
         end
     end
 
-    local painLevel = playerObj:getMoodles():getMoodleLevel(MoodleType.Pain)
+    local painLevel = getSafeMoodleLevel(playerObj, MoodleType.Pain, 0)
     if painLevel >= PAIN_INTERRUPT_LEVEL then
         stopRest(playerObj, state, logger, "pain")
         activeByPlayer[idx] = nil
