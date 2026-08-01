@@ -1,0 +1,473 @@
+require "Moveables/ISMoveableTools"
+require "Moveables/ISMoveableSpriteProps"
+
+local FurnitureNudgeRules = {}
+
+local DIRECTIONS = {
+    { label = "North", dx = 0, dy = -1 },
+    { label = "South", dx = 0, dy = 1 },
+    { label = "West", dx = -1, dy = 0 },
+    { label = "East", dx = 1, dy = 0 },
+}
+
+FurnitureNudgeRules.CANDIDATE_REASON_NOT_MOVEABLE = "not_moveable"
+FurnitureNudgeRules.CANDIDATE_REASON_MULTI_TILE = "multi_tile"
+FurnitureNudgeRules.CANDIDATE_REASON_HAS_CONTENTS = "has_contents"
+FurnitureNudgeRules.CANDIDATE_REASON_PARALLEL_WALL = "parallel_wall"
+FurnitureNudgeRules.CANDIDATE_REASON_REQUIRES_TOOL = "requires_tool"
+FurnitureNudgeRules.CANDIDATE_REASON_TOO_TIRED = "too_tired"
+
+local ENDURANCE_EPSILON = 0.0001
+
+local function isRugLike(obj)
+    if not obj or not obj.getSprite then
+        return false
+    end
+    local sprite = obj:getSprite()
+    if not sprite then
+        return false
+    end
+    local props = sprite:getProperties()
+    return props and props:has("MoveType") and props:get("MoveType") == "FloorRug"
+end
+
+local function isVegetationOverlay(obj)
+    if not obj or not obj.getProperties then
+        return false
+    end
+    local props = obj:getProperties()
+    return props and props:has(IsoFlagType.canBeCut)
+end
+
+local function isAllowedNonBlocker(obj, settings)
+    if not obj then
+        return true
+    end
+    if obj.isFloor and obj:isFloor() then
+        return true
+    end
+    if instanceof(obj, "IsoWorldInventoryObject") and settings.get("QoLforSacriel_FurnitureNudge_BlockOnFloorItems") ~= true then
+        return true
+    end
+    if isRugLike(obj) and settings.get("QoLforSacriel_FurnitureNudge_BlockOnRugs") ~= true then
+        return true
+    end
+    if isVegetationOverlay(obj) then
+        return true
+    end
+    return false
+end
+
+local function hasPassabilityBlocker(square)
+    if not square then
+        return true
+    end
+    if square:isSolid() or square:isSolidTrans() then
+        return true
+    end
+    if square:HasStairs() or square:HasStairsBelow() then
+        return true
+    end
+    return false
+end
+
+local function hasEdgeBlocker(fromSquare, toSquare)
+    if not fromSquare or not toSquare then
+        return true
+    end
+    if fromSquare:isWallTo(toSquare) or toSquare:isWallTo(fromSquare) then
+        return true
+    end
+    if fromSquare:isWindowBlockedTo(toSquare) or toSquare:isWindowBlockedTo(fromSquare) then
+        return true
+    end
+    if fromSquare:isDoorBlockedTo(toSquare) or toSquare:isDoorBlockedTo(fromSquare) then
+        return true
+    end
+    return false
+end
+
+local function isMoveableStructureObject(obj)
+    if not obj or not obj.getSprite then
+        return false
+    end
+
+    local sprite = obj:getSprite()
+    if not sprite then
+        return false
+    end
+
+    local props = sprite:getProperties()
+    if not props then
+        return false
+    end
+
+    local moveType = props:has("MoveType") and props:get("MoveType") or nil
+    if moveType == "Object" then
+        return true
+    end
+
+    if props:has("IsMoveAble") and (moveType == nil or moveType == "") then
+        return true
+    end
+
+    return false
+end
+
+local function requiresTool(moveProps)
+    if not moveProps then
+        return false
+    end
+    return moveProps.pickUpTool ~= nil or moveProps.placeTool ~= nil
+end
+
+local function collectMultiTileMembers(moveProps, sourceSquare)
+    local members = {}
+    local memberSet = {}
+
+    if moveProps and moveProps.isMultiSprite and moveProps.getSpriteGridInfo then
+        local info = moveProps:getSpriteGridInfo(sourceSquare, true)
+        if info then
+            for _, entry in ipairs(info) do
+                table.insert(members, entry)
+                if entry.object then
+                    memberSet[entry.object] = true
+                end
+            end
+        end
+    end
+
+    return members, memberSet
+end
+
+local function squareKey(square)
+    return tostring(square:getX()) .. ":" .. tostring(square:getY()) .. ":" .. tostring(square:getZ())
+end
+
+local function buildMemberSquareSet(members)
+    local out = {}
+    for _, member in ipairs(members) do
+        if member.square then
+            out[squareKey(member.square)] = true
+        end
+    end
+    return out
+end
+
+local function passesVanillaPlaceCheck(moveProps, targetSquare)
+    if not moveProps or not targetSquare then
+        return false
+    end
+    return moveProps:canPlaceMoveableInternal(nil, targetSquare, nil)
+end
+
+local function calculateEnduranceCostForMoveProps(moveProps, settings)
+    local rawWeight = 50
+    if moveProps and moveProps.rawWeight then
+        rawWeight = tonumber(moveProps.rawWeight) or rawWeight
+    end
+
+    local scale = tonumber(settings.get("QoLforSacriel_FurnitureNudge_EnduranceScale")) or 0.25
+    local minCost = tonumber(settings.get("QoLforSacriel_FurnitureNudge_EnduranceMin")) or 0.005
+    local cost = minCost + (rawWeight * 0.0007 * scale)
+
+    if cost < minCost then
+        return minCost
+    end
+    return cost
+end
+
+local function isSquareBlockedForMove(square, memberSet, settings)
+    if hasPassabilityBlocker(square) then
+        return true
+    end
+    local objects = square:getObjects()
+    for i = 0, objects:size() - 1 do
+        local obj = objects:get(i)
+        if not memberSet[obj] then
+            if not isAllowedNonBlocker(obj, settings) and isMoveableStructureObject(obj) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function isCandidateDisallowed(object, moveProps)
+    if not object or not moveProps then
+        return true, FurnitureNudgeRules.CANDIDATE_REASON_NOT_MOVEABLE
+    end
+    if requiresTool(moveProps) then
+        return true, FurnitureNudgeRules.CANDIDATE_REASON_REQUIRES_TOOL
+    end
+    if moveProps.isMultiSprite then
+        return true, FurnitureNudgeRules.CANDIDATE_REASON_MULTI_TILE
+    end
+    if not object:isObjectNoContainerOrEmpty() then
+        return true, FurnitureNudgeRules.CANDIDATE_REASON_HAS_CONTENTS
+    end
+    if instanceof(object, "IsoDoor") or instanceof(object, "IsoWindow") then
+        return true, FurnitureNudgeRules.CANDIDATE_REASON_NOT_MOVEABLE
+    end
+    if moveProps.type == "Window" or moveProps.type == "WindowObject" or moveProps.type == "WallOverlay" then
+        return true, FurnitureNudgeRules.CANDIDATE_REASON_NOT_MOVEABLE
+    end
+    return false, nil
+end
+
+function FurnitureNudgeRules.requiresTool(moveProps)
+    return requiresTool(moveProps)
+end
+
+function FurnitureNudgeRules.getEnduranceCost(candidate, settings)
+    if not candidate then
+        return 0
+    end
+    local moveProps = candidate.moveProps or (candidate.object and ISMoveableSpriteProps.fromObject(candidate.object)) or nil
+    return calculateEnduranceCostForMoveProps(moveProps, settings)
+end
+
+function FurnitureNudgeRules.isTooTiredForCandidate(playerObj, candidate, settings)
+    if not playerObj or not candidate then
+        return false
+    end
+    if playerObj.isUnlimitedEndurance and playerObj:isUnlimitedEndurance() then
+        return false
+    end
+
+    local stats = playerObj:getStats()
+    if not stats then
+        return false
+    end
+
+    local currentEndurance = stats:get(CharacterStat.ENDURANCE)
+    local cost = FurnitureNudgeRules.getEnduranceCost(candidate, settings)
+    local projectedEndurance = currentEndurance - cost
+
+    if settings and settings.get("QoLforSacriel_DebugLogs") == true then
+        local logger = _G.QoLforSacriel_Logger
+        if logger and logger.debug then
+            logger.debug("FurnitureNudge endurance gate: current=" .. tostring(currentEndurance) .. " cost=" .. tostring(cost) .. " projected=" .. tostring(projectedEndurance))
+        end
+    end
+
+    if stats.isAtMinimum and stats:isAtMinimum(CharacterStat.ENDURANCE) then
+        return true
+    end
+
+    return projectedEndurance <= ENDURANCE_EPSILON
+end
+
+local function describeCandidate(entry)
+    local moveProps = entry and entry.moveProps or nil
+    if moveProps and moveProps.name and moveProps.name ~= "" then
+        return Translator and Translator.getMoveableDisplayName and Translator.getMoveableDisplayName(moveProps.name) or moveProps.name
+    end
+    return "Furniture"
+end
+
+local function addCandidate(out, seenByObject, entry, square)
+    if not entry or not entry.object or seenByObject[entry.object] then
+        return
+    end
+
+    seenByObject[entry.object] = true
+
+    local disallowed, reason = isCandidateDisallowed(entry.object, entry.moveProps)
+    table.insert(out, {
+        object = entry.object,
+        moveProps = entry.moveProps,
+        square = square,
+        isNudgeDisabled = disallowed,
+        disableReason = reason,
+        displayName = describeCandidate(entry),
+    })
+end
+
+function FurnitureNudgeRules.resolveCandidates(worldobjects)
+    if not worldobjects then
+        return {}
+    end
+
+    local out = {}
+    local seenByObject = {}
+
+    for _, clicked in ipairs(worldobjects) do
+        if clicked and clicked.getSquare and clicked:getSquare() then
+            local square = clicked:getSquare()
+            local moveables = ISMoveableTools.getMoveableList(square)
+
+            for _, entry in ipairs(moveables) do
+                if entry and entry.object == clicked and entry.moveProps and entry.moveProps.isMoveable then
+                    addCandidate(out, seenByObject, entry, square)
+                end
+            end
+        end
+    end
+
+    for _, clicked in ipairs(worldobjects) do
+        local square = clicked and clicked.getSquare and clicked:getSquare() or nil
+        if square then
+            local moveables = ISMoveableTools.getMoveableList(square)
+            for _, entry in ipairs(moveables) do
+                if entry and entry.object and entry.moveProps and entry.moveProps.isMoveable then
+                    addCandidate(out, seenByObject, entry, square)
+                end
+            end
+        end
+    end
+
+    return out
+end
+
+function FurnitureNudgeRules.resolveCandidate(worldobjects)
+    local candidates = FurnitureNudgeRules.resolveCandidates(worldobjects)
+    if #candidates == 0 then
+        return nil
+    end
+    return candidates[1]
+end
+
+local function getLateralOffsets(direction)
+    if direction.dx ~= 0 then
+        return {
+            { dx = 0, dy = -1 },
+            { dx = 0, dy = 1 },
+        }
+    end
+    return {
+        { dx = -1, dy = 0 },
+        { dx = 1, dy = 0 },
+    }
+end
+
+local function hasWallOnSide(square, sideOffset)
+    local sideSquare = getCell():getGridSquare(square:getX() + sideOffset.dx, square:getY() + sideOffset.dy, square:getZ())
+    if not sideSquare then
+        return false
+    end
+    return square:isWallTo(sideSquare) or sideSquare:isWallTo(square)
+end
+
+local function isParallelWallSlideBlocked(sourceSquare, targetSquare, direction)
+    if not sourceSquare or not targetSquare then
+        return false
+    end
+
+    local lateralOffsets = getLateralOffsets(direction)
+    local blockedSides = 0
+    for _, lateral in ipairs(lateralOffsets) do
+        local sourceHasWall = hasWallOnSide(sourceSquare, lateral)
+        local targetHasWall = hasWallOnSide(targetSquare, lateral)
+        if sourceHasWall and targetHasWall then
+            blockedSides = blockedSides + 1
+        end
+    end
+
+    -- Only block when movement stays pinched between walls on both lateral sides.
+    return blockedSides >= 2
+end
+
+function FurnitureNudgeRules.canMoveDirection(playerObj, candidate, direction, settings)
+    if not playerObj or not candidate or not candidate.object or not direction then
+        return false
+    end
+
+    local sourceSquare = candidate.object:getSquare()
+    if not sourceSquare then
+        return false
+    end
+
+    local targetSquare = getCell():getGridSquare(sourceSquare:getX() + direction.dx, sourceSquare:getY() + direction.dy, sourceSquare:getZ())
+    if not targetSquare then
+        return false
+    end
+
+    if hasEdgeBlocker(sourceSquare, targetSquare) then
+        return false
+    end
+
+    if isParallelWallSlideBlocked(sourceSquare, targetSquare, direction) then
+        if candidate then
+            candidate.disableReason = FurnitureNudgeRules.CANDIDATE_REASON_PARALLEL_WALL
+        end
+        return false
+    end
+
+    local moveProps = candidate.moveProps or ISMoveableSpriteProps.fromObject(candidate.object)
+    if not moveProps or not moveProps.isMoveable then
+        return false
+    end
+
+    local members, memberSet = collectMultiTileMembers(moveProps, sourceSquare)
+    local memberSquareSet = buildMemberSquareSet(members)
+
+    if #members > 0 then
+        for _, member in ipairs(members) do
+            local memberSquare = member.square
+            local memberTarget = getCell():getGridSquare(memberSquare:getX() + direction.dx, memberSquare:getY() + direction.dy, memberSquare:getZ())
+            if not memberTarget then
+                return false
+            end
+            if hasEdgeBlocker(memberSquare, memberTarget) then
+                return false
+            end
+            if isSquareBlockedForMove(memberTarget, memberSet, settings) then
+                return false
+            end
+            if not memberSquareSet[squareKey(memberTarget)] and not passesVanillaPlaceCheck(moveProps, memberTarget) then
+                return false
+            end
+        end
+    else
+        if isSquareBlockedForMove(targetSquare, memberSet, settings) then
+            return false
+        end
+        if not passesVanillaPlaceCheck(moveProps, targetSquare) then
+            return false
+        end
+    end
+
+    return true
+end
+
+function FurnitureNudgeRules.getValidDirections(playerObj, candidate, settings)
+    local out = {}
+    for _, direction in ipairs(DIRECTIONS) do
+        if FurnitureNudgeRules.canMoveDirection(playerObj, candidate, direction, settings) then
+            table.insert(out, direction)
+        end
+    end
+    return out
+end
+
+function FurnitureNudgeRules.isPlayerCloseEnough(playerObj, candidate)
+    if not playerObj or not candidate or not candidate.object then
+        return false
+    end
+
+    local playerSquare = playerObj:getSquare()
+    local sourceSquare = candidate.object:getSquare()
+    if not playerSquare or not sourceSquare then
+        return false
+    end
+    if playerSquare:getZ() ~= sourceSquare:getZ() then
+        return false
+    end
+
+    local moveProps = candidate.moveProps or ISMoveableSpriteProps.fromObject(candidate.object)
+    if moveProps and moveProps.isMultiSprite then
+        local members = select(1, collectMultiTileMembers(moveProps, sourceSquare))
+        for _, member in ipairs(members) do
+            local square = member.square
+            if square and (playerSquare == square or playerSquare:isAdjacentTo(square)) then
+                return true
+            end
+        end
+        return false
+    end
+
+    return playerSquare == sourceSquare or playerSquare:isAdjacentTo(sourceSquare)
+end
+
+return FurnitureNudgeRules

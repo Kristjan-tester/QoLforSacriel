@@ -147,6 +147,14 @@ function CoreModOptions.register(logger)
     presetHotkey8.alt = false
 
     options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_FurnitureNudgeTitle")
+    options:addTickBox("enableFurnitureNudge", "UI_QoLforSacriel_Modules_EnableFurnitureNudge", true, "UI_QoLforSacriel_Modules_EnableFurnitureNudge_Tooltip")
+    options:addTextEntry("furnitureNudgeEnduranceScale", "UI_QoLforSacriel_Modules_FurnitureNudgeEnduranceScale", "0.25", "UI_QoLforSacriel_Modules_FurnitureNudgeEnduranceScale_Tooltip")
+    options:addTextEntry("furnitureNudgeEnduranceMin", "UI_QoLforSacriel_Modules_FurnitureNudgeEnduranceMin", "0.005", "UI_QoLforSacriel_Modules_FurnitureNudgeEnduranceMin_Tooltip")
+    options:addTickBox("furnitureNudgeBlockOnFloorItems", "UI_QoLforSacriel_Modules_FurnitureNudgeBlockOnFloorItems", false, "UI_QoLforSacriel_Modules_FurnitureNudgeBlockOnFloorItems_Tooltip")
+    options:addTickBox("furnitureNudgeBlockOnRugs", "UI_QoLforSacriel_Modules_FurnitureNudgeBlockOnRugs", false, "UI_QoLforSacriel_Modules_FurnitureNudgeBlockOnRugs_Tooltip")
+
+    options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_ArmorMoodTitle")
     options:addTickBox("enableArmorMood", "UI_QoLforSacriel_Modules_EnableArmorMood", true, "UI_QoLforSacriel_Modules_EnableArmorMood_Tooltip")
     options:addTextEntry("armorMoodBaseReductionFactor", "UI_QoLforSacriel_Modules_ArmorMoodBaseReductionFactor", "0.95", "UI_QoLforSacriel_Modules_ArmorMoodBaseReductionFactor_Tooltip")

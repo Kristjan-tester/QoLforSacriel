@@ -11,6 +11,7 @@ local defaults = {
     QoLforSacriel_EnableRestSleep = true,
     QoLforSacriel_EnableEquipment = true,
     QoLforSacriel_EnableArmorMood = true,
+    QoLforSacriel_EnableFurnitureNudge = true,
 
     QoLforSacriel_Equipment_EnablePresets = true,
 
@@ -65,6 +66,11 @@ local defaults = {
     QoLforSacriel_Equipment_PresetHotkey7 = "F7",
     QoLforSacriel_Equipment_PresetHotkey8 = "F8",
 
+    QoLforSacriel_FurnitureNudge_EnduranceScale = 0.25,
+    QoLforSacriel_FurnitureNudge_EnduranceMin = 0.005,
+    QoLforSacriel_FurnitureNudge_BlockOnFloorItems = false,
+    QoLforSacriel_FurnitureNudge_BlockOnRugs = false,
+
     QoLforSacriel_ArmorMood_BaseReductionFactor = 0.95,
     QoLforSacriel_ArmorMood_UpdateCooldownSeconds = 2,
 }
@@ -98,6 +104,11 @@ local MOD_OPTION_KEY_BY_SETTING = {
     QoLforSacriel_Equipment_PresetHotkey6 = "equipmentPresetHotkey6",
     QoLforSacriel_Equipment_PresetHotkey7 = "equipmentPresetHotkey7",
     QoLforSacriel_Equipment_PresetHotkey8 = "equipmentPresetHotkey8",
+    QoLforSacriel_EnableFurnitureNudge = "enableFurnitureNudge",
+    QoLforSacriel_FurnitureNudge_EnduranceScale = "furnitureNudgeEnduranceScale",
+    QoLforSacriel_FurnitureNudge_EnduranceMin = "furnitureNudgeEnduranceMin",
+    QoLforSacriel_FurnitureNudge_BlockOnFloorItems = "furnitureNudgeBlockOnFloorItems",
+    QoLforSacriel_FurnitureNudge_BlockOnRugs = "furnitureNudgeBlockOnRugs",
     QoLforSacriel_EnableArmorMood = "enableArmorMood",
     QoLforSacriel_ArmorMood_BaseReductionFactor = "armorMoodBaseReductionFactor",
     QoLforSacriel_ArmorMood_UpdateCooldownSeconds = "armorMoodUpdateCooldownSeconds",
