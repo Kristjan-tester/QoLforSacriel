@@ -25,6 +25,7 @@ local function registerModules()
     local skillFilter = safeRequire("QoLforSacriel/Modules/UIFixes/SkillFilter")
     local waterDepthHints = safeRequire("QoLforSacriel/Modules/UIFixes/WaterDepthHints")
     local soundDirection = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundDirection")
+    local furnitureNudge = safeRequire("QoLforSacriel/Modules/FurnitureNudge/FurnitureNudge")
     local dragDrop = safeRequire("QoLforSacriel/Modules/DragDrop/DragDropFatigue")
     local restSleep = safeRequire("QoLforSacriel/Modules/RestSleep/RestUntilSleepy")
     local equipmentPresets = safeRequire("QoLforSacriel/Modules/Equipment/EquipmentPresets")
@@ -38,6 +39,9 @@ local function registerModules()
     end
     if soundDirection and soundDirection.init then
         registry.register("UIFixes.SoundDirection", "QoLforSacriel_EnableUIFixes", soundDirection.init)
+    end
+    if furnitureNudge and furnitureNudge.init then
+        registry.register("FurnitureNudge.Base", "QoLforSacriel_EnableFurnitureNudge", furnitureNudge.init)
     end
     if dragDrop and dragDrop.init then
         registry.register("DragDrop.Fatigue", "QoLforSacriel_EnableDragDrop", dragDrop.init)
