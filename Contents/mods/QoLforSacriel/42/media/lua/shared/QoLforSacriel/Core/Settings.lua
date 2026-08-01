@@ -12,6 +12,7 @@ local defaults = {
     QoLforSacriel_EnableEquipment = true,
     QoLforSacriel_EnableArmorMood = true,
     QoLforSacriel_EnableFurnitureNudge = true,
+    QoLforSacriel_EnableLightSwitchToggle = true,
 
     QoLforSacriel_Equipment_EnablePresets = true,
 
@@ -71,6 +72,10 @@ local defaults = {
     QoLforSacriel_FurnitureNudge_BlockOnFloorItems = false,
     QoLforSacriel_FurnitureNudge_BlockOnRugs = false,
 
+    QoLforSacriel_LightSwitchToggle_Hotkey = "F",
+    QoLforSacriel_LightSwitchToggle_Range = 1,
+    QoLforSacriel_LightSwitchToggle_RequireSameRoom = true,
+
     QoLforSacriel_ArmorMood_BaseReductionFactor = 0.95,
     QoLforSacriel_ArmorMood_UpdateCooldownSeconds = 2,
 }
@@ -109,6 +114,10 @@ local MOD_OPTION_KEY_BY_SETTING = {
     QoLforSacriel_FurnitureNudge_EnduranceMin = "furnitureNudgeEnduranceMin",
     QoLforSacriel_FurnitureNudge_BlockOnFloorItems = "furnitureNudgeBlockOnFloorItems",
     QoLforSacriel_FurnitureNudge_BlockOnRugs = "furnitureNudgeBlockOnRugs",
+    QoLforSacriel_EnableLightSwitchToggle = "enableLightSwitchToggle",
+    QoLforSacriel_LightSwitchToggle_Hotkey = "lightSwitchToggleHotkey",
+    QoLforSacriel_LightSwitchToggle_Range = "lightSwitchToggleRange",
+    QoLforSacriel_LightSwitchToggle_RequireSameRoom = "lightSwitchToggleRequireSameRoom",
     QoLforSacriel_EnableArmorMood = "enableArmorMood",
     QoLforSacriel_ArmorMood_BaseReductionFactor = "armorMoodBaseReductionFactor",
     QoLforSacriel_ArmorMood_UpdateCooldownSeconds = "armorMoodUpdateCooldownSeconds",
