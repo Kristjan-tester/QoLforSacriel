@@ -28,7 +28,7 @@ function FurnitureNudgeAction:isValid()
     if not self.object:isObjectNoContainerOrEmpty() then
         return false
     end
-    if rules.isTooTiredForCandidate(self.character, candidate, self.settings) then
+    if rules.isTooTiredForCandidate(self.character, candidate, self.settings, true) then
         return false
     end
 
@@ -64,7 +64,10 @@ function FurnitureNudgeAction:perform()
         moveProps = self.object and ISMoveableSpriteProps.fromObject(self.object) or nil,
         square = self.object and self.object:getSquare() or nil,
     }
-    if rules.isTooTiredForCandidate(self.character, preCandidate, self.settings) then
+    local plannedCost = rules.getEnduranceCost(preCandidate, self.settings, false)
+    self._plannedEnduranceCost = plannedCost
+
+    if rules.isTooTiredForCandidate(self.character, preCandidate, self.settings, false) then
         if self.logger then
             self.logger.debug("FurnitureNudge move blocked at perform stage: too tired")
         end
@@ -128,12 +131,15 @@ function FurnitureNudgeAction:applyEnduranceCost()
         return
     end
 
-    local candidate = {
-        object = self.object,
-        moveProps = self.object and ISMoveableSpriteProps.fromObject(self.object) or nil,
-        square = self.object and self.object:getSquare() or nil,
-    }
-    local cost = rules.getEnduranceCost(candidate, self.settings)
+    local cost = tonumber(self._plannedEnduranceCost) or 0
+    if cost <= 0 then
+        local candidate = {
+            object = self.object,
+            moveProps = self.object and ISMoveableSpriteProps.fromObject(self.object) or nil,
+            square = self.object and self.object:getSquare() or nil,
+        }
+        cost = rules.getEnduranceCost(candidate, self.settings, false)
+    end
 
     stats:remove(CharacterStat.ENDURANCE, cost)
     if syncPlayerStats then

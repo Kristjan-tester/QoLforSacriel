@@ -24,6 +24,7 @@ end
 local function registerModules()
     local skillFilter = safeRequire("QoLforSacriel/Modules/UIFixes/SkillFilter")
     local waterDepthHints = safeRequire("QoLforSacriel/Modules/UIFixes/WaterDepthHints")
+    local heavyLoadHurtFeedback = safeRequire("QoLforSacriel/Modules/UIFixes/HeavyLoadHurtFeedback")
     local soundDirection = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundDirection")
     local furnitureNudge = safeRequire("QoLforSacriel/Modules/FurnitureNudge/FurnitureNudge")
     local lightSwitchToggle = safeRequire("QoLforSacriel/Modules/LightSwitchToggle/LightSwitchToggle")
@@ -37,6 +38,9 @@ local function registerModules()
     end
     if waterDepthHints and waterDepthHints.init then
         registry.register("UIFixes.WaterDepthHints", "QoLforSacriel_EnableUIFixes", waterDepthHints.init)
+    end
+    if heavyLoadHurtFeedback and heavyLoadHurtFeedback.init then
+        registry.register("UIFixes.HeavyLoadHurtFeedback", "QoLforSacriel_EnableUIFixes", heavyLoadHurtFeedback.init)
     end
     if soundDirection and soundDirection.init then
         registry.register("UIFixes.SoundDirection", "QoLforSacriel_EnableUIFixes", soundDirection.init)

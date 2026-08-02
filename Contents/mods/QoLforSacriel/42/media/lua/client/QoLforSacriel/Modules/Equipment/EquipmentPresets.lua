@@ -3,9 +3,11 @@ local EquipmentPresets = {}
 local installed = false
 local MAX_PRESET_COUNT = 8
 local MOD_DATA_KEY = "QoLforSacriel_EquipmentPresets"
+local MOD_DATA_TOGGLE_STATE_KEY = "QoLforSacriel_EquipmentPresetToggleState"
 local HAND_MODE_PRIMARY = "primary"
 local HAND_MODE_SECONDARY = "secondary"
 local HAND_MODE_BOTH = "both"
+local MAX_BODY_LOCATION_LENGTH = 64
 local HOTKEY_NONE_TOKEN = "NONE"
 local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
 
@@ -337,15 +339,50 @@ local function getEntryHandMode(entry)
     return nil
 end
 
-local function createPresetEntry(fullType, handMode)
-    if not handMode then
+local function normalizeBodyLocation(bodyLocation)
+    if not bodyLocation then
+        return nil
+    end
+
+    local value = tostring(bodyLocation)
+    if value == "" then
+        return nil
+    end
+
+    if #value > MAX_BODY_LOCATION_LENGTH then
+        return nil
+    end
+
+    if value:find("[^%w_%-]", 1, false) then
+        return nil
+    end
+
+    return value
+end
+
+local function getEntryBodyLocation(entry)
+    if type(entry) ~= "table" then
+        return nil
+    end
+    return normalizeBodyLocation(entry.bodyLocation)
+end
+
+local function createPresetEntry(fullType, handMode, bodyLocation)
+    local normalizedBodyLocation = normalizeBodyLocation(bodyLocation)
+    if not handMode and not normalizedBodyLocation then
         return fullType
     end
 
-    return {
+    local out = {
         fullType = fullType,
         handMode = handMode,
     }
+
+    if normalizedBodyLocation then
+        out.bodyLocation = normalizedBodyLocation
+    end
+
+    return out
 end
 
 getConfiguredPresetCount = function(settings)
@@ -434,6 +471,32 @@ local function getPresetStore(playerObj)
     return store
 end
 
+local function getToggleStateStore(playerObj)
+    local modData = playerObj:getModData()
+    if type(modData[MOD_DATA_TOGGLE_STATE_KEY]) ~= "table" then
+        modData[MOD_DATA_TOGGLE_STATE_KEY] = {}
+    end
+
+    local store = modData[MOD_DATA_TOGGLE_STATE_KEY]
+    for i = 1, MAX_PRESET_COUNT do
+        if store[i] == nil then
+            store[i] = false
+        end
+    end
+
+    return store
+end
+
+local function setPresetMarkedEquipped(playerObj, presetIndex, marked)
+    local store = getToggleStateStore(playerObj)
+    store[presetIndex] = marked == true
+end
+
+local function isPresetMarkedEquipped(playerObj, presetIndex)
+    local store = getToggleStateStore(playerObj)
+    return store[presetIndex] == true
+end
+
 local function containsType(list, fullType)
     for i = 1, #list do
         if getEntryFullType(list[i]) == fullType then
@@ -464,11 +527,15 @@ local function upsertPresetEntry(playerObj, presetIndex, entry)
     if existingIndex then
         local existingMode = getEntryHandMode(preset[existingIndex])
         local incomingMode = getEntryHandMode(entry)
+        local existingBodyLocation = getEntryBodyLocation(preset[existingIndex])
+        local incomingBodyLocation = getEntryBodyLocation(entry)
 
-        if incomingMode and incomingMode ~= existingMode then
-            preset[existingIndex] = createPresetEntry(fullType, incomingMode)
-        elseif type(preset[existingIndex]) ~= "table" and incomingMode then
-            preset[existingIndex] = createPresetEntry(fullType, incomingMode)
+        local modeChanged = incomingMode and incomingMode ~= existingMode
+        local bodyLocationChanged = incomingBodyLocation and incomingBodyLocation ~= existingBodyLocation
+        local tableUpgradeNeeded = type(preset[existingIndex]) ~= "table" and (incomingMode or incomingBodyLocation)
+
+        if modeChanged or bodyLocationChanged or tableUpgradeNeeded then
+            preset[existingIndex] = createPresetEntry(fullType, incomingMode or existingMode, incomingBodyLocation or existingBodyLocation)
         end
         return
     end
@@ -479,6 +546,7 @@ end
 local function clearPreset(playerObj, presetIndex)
     local store = getPresetStore(playerObj)
     store[presetIndex] = {}
+    setPresetMarkedEquipped(playerObj, presetIndex, false)
 end
 
 local function detectCurrentHandMode(playerObj, item)
@@ -500,6 +568,26 @@ local function detectCurrentHandMode(playerObj, item)
     return nil
 end
 
+local function detectCurrentBodyLocation(playerObj, item)
+    if not playerObj or not item then
+        return nil
+    end
+
+    local wornItems = playerObj:getWornItems()
+    if not wornItems then
+        return nil
+    end
+
+    for i = 0, wornItems:size() - 1 do
+        local worn = wornItems:get(i)
+        if worn and worn.getItem and worn:getItem() == item and worn.getLocation then
+            return normalizeBodyLocation(worn:getLocation())
+        end
+    end
+
+    return nil
+end
+
 local function collectSelectedEntries(items, playerObj)
     local selectedEntries = {}
     local seen = {}
@@ -510,15 +598,20 @@ local function collectSelectedEntries(items, playerObj)
             local fullType = item:getFullType()
             if fullType then
                 local handMode = detectCurrentHandMode(playerObj, item)
+                local bodyLocation = detectCurrentBodyLocation(playerObj, item)
                 if not seen[fullType] then
-                    table.insert(selectedEntries, createPresetEntry(fullType, handMode))
+                    table.insert(selectedEntries, createPresetEntry(fullType, handMode, bodyLocation))
                     seen[fullType] = {
                         index = #selectedEntries,
                         handMode = handMode,
+                        bodyLocation = bodyLocation,
                     }
-                elseif handMode and not seen[fullType].handMode then
-                    selectedEntries[seen[fullType].index] = createPresetEntry(fullType, handMode)
-                    seen[fullType].handMode = handMode
+                elseif (handMode and not seen[fullType].handMode) or (bodyLocation and not seen[fullType].bodyLocation) then
+                    local resolvedHandMode = handMode or seen[fullType].handMode
+                    local resolvedBodyLocation = bodyLocation or seen[fullType].bodyLocation
+                    selectedEntries[seen[fullType].index] = createPresetEntry(fullType, resolvedHandMode, resolvedBodyLocation)
+                    seen[fullType].handMode = resolvedHandMode
+                    seen[fullType].bodyLocation = resolvedBodyLocation
                 end
             end
         end
@@ -661,7 +754,8 @@ local function collectCurrentProtectiveAndWeaponEntries(playerObj)
 
         if isProtectiveGearItem(item) or isWeaponCategoryItem(item) then
             local handMode = detectCurrentHandMode(playerObj, item)
-            table.insert(selectedEntries, createPresetEntry(fullType, handMode))
+            local bodyLocation = detectCurrentBodyLocation(playerObj, item)
+            table.insert(selectedEntries, createPresetEntry(fullType, handMode, bodyLocation))
             seen[fullType] = true
         end
     end
@@ -684,6 +778,7 @@ end
 local function replacePresetWithCurrentProtective(playerObj, presetIndex)
     clearPreset(playerObj, presetIndex)
     addSelectionToPreset(playerObj, presetIndex, collectCurrentProtectiveAndWeaponEntries(playerObj))
+    setPresetMarkedEquipped(playerObj, presetIndex, false)
 end
 
 local function getDisplayNameForType(fullType)
@@ -837,6 +932,129 @@ local function isTypeEquipped(playerObj, fullType)
     return findWornItemByType(playerObj, fullType) ~= nil
 end
 
+local function findWornItemByTypeAndLocation(playerObj, fullType, bodyLocation)
+    local normalizedBodyLocation = normalizeBodyLocation(bodyLocation)
+    if not normalizedBodyLocation then
+        return nil
+    end
+
+    local wornItems = playerObj:getWornItems()
+    if not wornItems then
+        return nil
+    end
+
+    for i = 0, wornItems:size() - 1 do
+        local worn = wornItems:get(i)
+        if worn and worn.getItem and worn.getLocation then
+            local location = normalizeBodyLocation(worn:getLocation())
+            local item = worn:getItem()
+            if location == normalizedBodyLocation and item and item.getFullType and item:getFullType() == fullType then
+                return item
+            end
+        end
+    end
+
+    return nil
+end
+
+local function isBodyLocationSatisfied(playerObj, fullType, bodyLocation)
+    return findWornItemByTypeAndLocation(playerObj, fullType, bodyLocation) ~= nil
+end
+
+local function getItemByTypeForBodyLocation(playerObj, fullType, bodyLocation)
+    local normalizedBodyLocation = normalizeBodyLocation(bodyLocation)
+    if not normalizedBodyLocation then
+        return playerObj:getInventory():getFirstTypeRecurse(fullType)
+    end
+
+    local bestFallback = nil
+    local inventory = playerObj:getInventory()
+    if not inventory then
+        return nil
+    end
+
+    local items = inventory:getAllEvalRecurse(function(it)
+        return it and it.getFullType and it:getFullType() == fullType
+    end)
+
+    if not items then
+        return nil
+    end
+
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item and not playerObj:isEquipped(item) then
+            local itemBodyLocation = normalizeBodyLocation(item.getBodyLocation and item:getBodyLocation() or nil)
+            local itemEquippedLocation = normalizeBodyLocation(item.canBeEquipped and item:canBeEquipped() or nil)
+            if itemBodyLocation == normalizedBodyLocation or itemEquippedLocation == normalizedBodyLocation then
+                return item
+            end
+            if not bestFallback then
+                bestFallback = item
+            end
+        end
+    end
+
+    if bestFallback then
+        return bestFallback
+    end
+
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item then
+            return item
+        end
+    end
+
+    return nil
+end
+
+local function getItemBodyLocation(item)
+    if not item then
+        return nil
+    end
+
+    if item.IsClothing and item:IsClothing() and item.getBodyLocation then
+        return normalizeBodyLocation(item:getBodyLocation())
+    end
+
+    if item.canBeEquipped then
+        return normalizeBodyLocation(item:canBeEquipped())
+    end
+
+    return nil
+end
+
+local function resolveExtraTypeForBodyLocation(item, bodyLocation)
+    local normalizedBodyLocation = normalizeBodyLocation(bodyLocation)
+    if not item or not normalizedBodyLocation then
+        return nil
+    end
+
+    if getItemBodyLocation(item) == normalizedBodyLocation then
+        return nil
+    end
+
+    if not item.getClothingItemExtra or not item.getModule then
+        return nil
+    end
+
+    local extraList = item:getClothingItemExtra()
+    if not extraList then
+        return nil
+    end
+
+    for i = 0, extraList:size() - 1 do
+        local extraType = moduleDotType(item:getModule(), extraList:get(i))
+        local extraItem = ISInventoryPaneContextMenu.getItemInstance and ISInventoryPaneContextMenu.getItemInstance(extraType) or nil
+        if extraItem and getItemBodyLocation(extraItem) == normalizedBodyLocation then
+            return extraType
+        end
+    end
+
+    return nil
+end
+
 local function isPresetEntryEquipped(playerObj, entry)
     local fullType = getEntryFullType(entry)
     if not fullType then
@@ -847,11 +1065,17 @@ local function isPresetEntryEquipped(playerObj, entry)
     if handMode then
         return isHandModeSatisfied(playerObj, fullType, handMode)
     end
+
+    local bodyLocation = getEntryBodyLocation(entry)
+    if bodyLocation then
+        return isBodyLocationSatisfied(playerObj, fullType, bodyLocation)
+    end
+
     return isTypeEquipped(playerObj, fullType)
 end
 
-local function queueEquipByType(playerObj, fullType, handMode)
-    local item = playerObj:getInventory():getFirstTypeRecurse(fullType)
+local function queueEquipByType(playerObj, fullType, handMode, bodyLocation)
+    local item = getItemByTypeForBodyLocation(playerObj, fullType, bodyLocation)
     if not item then
         return false
     end
@@ -874,6 +1098,27 @@ local function queueEquipByType(playerObj, fullType, handMode)
             return true
         end
         ISInventoryPaneContextMenu.equipWeapon(item, true, false, playerNum)
+        return true
+    end
+
+    local normalizedBodyLocation = normalizeBodyLocation(bodyLocation)
+    if normalizedBodyLocation then
+        if isBodyLocationSatisfied(playerObj, fullType, normalizedBodyLocation) then
+            return true
+        end
+
+        local occupying = playerObj:getWornItem(normalizedBodyLocation)
+        if occupying and occupying ~= item then
+            ISInventoryPaneContextMenu.unequipItem(occupying, playerNum)
+        end
+
+        local extraType = resolveExtraTypeForBodyLocation(item, normalizedBodyLocation)
+        if extraType and ISInventoryPaneContextMenu.onClothingItemExtra then
+            ISInventoryPaneContextMenu.onClothingItemExtra(item, extraType, playerObj)
+            return true
+        end
+
+        ISInventoryPaneContextMenu.wearItem(item, playerNum)
         return true
     end
 
@@ -914,6 +1159,26 @@ local function shouldUnequipPreset(playerObj, presetIndex)
     if not hasAny then
         return false
     end
+    if isPresetMarkedEquipped(playerObj, presetIndex) then
+        local hasMissingButAvailable = false
+        forEachPresetItem(playerObj, presetIndex, function(entry)
+            if hasMissingButAvailable then
+                return
+            end
+
+            if not isPresetEntryEquipped(playerObj, entry) then
+                local fullType = getEntryFullType(entry)
+                local bodyLocation = getEntryBodyLocation(entry)
+                if fullType and getItemByTypeForBodyLocation(playerObj, fullType, bodyLocation) then
+                    hasMissingButAvailable = true
+                end
+            end
+        end)
+
+        if not hasMissingButAvailable then
+            return true
+        end
+    end
     return allEquipped
 end
 
@@ -927,22 +1192,35 @@ local function togglePreset(playerObj, presetIndex, logger)
 
     local unequip = shouldUnequipPreset(playerObj, presetIndex)
     local changed = 0
+    local missingOnEquip = 0
 
     for i = 1, #preset do
         local entry = preset[i]
         local fullType = getEntryFullType(entry)
         if fullType and fullType ~= "" then
             local handMode = getEntryHandMode(entry)
+            local bodyLocation = getEntryBodyLocation(entry)
             local ok = false
             if unequip then
                 ok = queueUnequipByType(playerObj, fullType)
             else
-                ok = queueEquipByType(playerObj, fullType, handMode)
+                ok = queueEquipByType(playerObj, fullType, handMode, bodyLocation)
             end
             if ok then
                 changed = changed + 1
+            elseif not unequip then
+                missingOnEquip = missingOnEquip + 1
             end
         end
+    end
+
+    if unequip then
+        setPresetMarkedEquipped(playerObj, presetIndex, false)
+    elseif missingOnEquip > 0 then
+        -- Missing inventory items should still let the next toggle act as unequip.
+        setPresetMarkedEquipped(playerObj, presetIndex, true)
+    else
+        setPresetMarkedEquipped(playerObj, presetIndex, false)
     end
 
     logger.debug("Equipment preset " .. tostring(presetIndex) .. " toggled; mode=" .. (unequip and "unequip" or "equip") .. ", actions=" .. tostring(changed))

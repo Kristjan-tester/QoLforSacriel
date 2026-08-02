@@ -31,6 +31,8 @@
   "UI_QoLforSacriel_Modules_SkillFilterIncludePartialXP_Tooltip": "Keeps skills visible when they have some progress but no full level yet.",
   "UI_QoLforSacriel_Modules_EnableWaterDepthHints": "Enable Water Depth Hints Module",
   "UI_QoLforSacriel_Modules_EnableWaterDepthHints_Tooltip": "Shows water depth overlay hints while using the Water search focus.",
+  "UI_QoLforSacriel_Modules_EnableHeavyLoadHurtFeedback": "Enable Heavy Load Hurt Feedback",
+  "UI_QoLforSacriel_Modules_EnableHeavyLoadHurtFeedback_Tooltip": "Plays local hurt feedback when heavy-load damage is actively reducing health.",
   "UI_QoLforSacriel_Modules_WaterDepthOverlayRadius": "Water Depth Overlay Radius",
   "UI_QoLforSacriel_Modules_WaterDepthOverlayRadius_Tooltip": "How many tiles around the player are scanned for water depth markers. Default 3, 5+ will have fps impact",
   "UI_QoLforSacriel_Modules_EnableSoundDirection": "Enable Sound Direction Module",

@@ -18,6 +18,7 @@ FurnitureNudgeRules.CANDIDATE_REASON_REQUIRES_TOOL = "requires_tool"
 FurnitureNudgeRules.CANDIDATE_REASON_TOO_TIRED = "too_tired"
 
 local ENDURANCE_EPSILON = 0.0001
+local FLUID_ENDURANCE_PER_LITER = 0.005
 
 local function isRugLike(obj)
     if not obj or not obj.getSprite then
@@ -39,6 +40,29 @@ local function isVegetationOverlay(obj)
     return props and props:has(IsoFlagType.canBeCut)
 end
 
+local function isDecorativeWallOverlay(obj)
+    if not obj or not obj.getSprite then
+        return false
+    end
+
+    local sprite = obj:getSprite()
+    if not sprite then
+        return false
+    end
+
+    local props = sprite:getProperties()
+    if not props then
+        return false
+    end
+
+    if props:has("MoveType") and props:get("MoveType") == "WallOverlay" then
+        return true
+    end
+
+    -- Decorative wall attachments commonly expose attached side props.
+    return props:has("attachedN") or props:has("attachedW") or props:has("attachedS") or props:has("attachedE")
+end
+
 local function isAllowedNonBlocker(obj, settings)
     if not obj then
         return true
@@ -53,6 +77,9 @@ local function isAllowedNonBlocker(obj, settings)
         return true
     end
     if isVegetationOverlay(obj) then
+        return true
+    end
+    if isDecorativeWallOverlay(obj) then
         return true
     end
     return false
@@ -177,6 +204,24 @@ local function calculateEnduranceCostForMoveProps(moveProps, settings)
     return cost
 end
 
+local function getFluidLitersFromObject(object)
+    if not object then
+        return 0
+    end
+
+    if object.getFluidContainer then
+        local fluidContainer = object:getFluidContainer()
+        if fluidContainer and fluidContainer.getAmount then
+            local amount = tonumber(fluidContainer:getAmount())
+            if amount and amount > 0 then
+                return amount
+            end
+        end
+    end
+
+    return 0
+end
+
 local function isSquareBlockedForMove(square, memberSet, settings)
     if hasPassabilityBlocker(square) then
         return true
@@ -209,7 +254,7 @@ local function isCandidateDisallowed(object, moveProps)
     if instanceof(object, "IsoDoor") or instanceof(object, "IsoWindow") then
         return true, FurnitureNudgeRules.CANDIDATE_REASON_NOT_MOVEABLE
     end
-    if moveProps.type == "Window" or moveProps.type == "WindowObject" or moveProps.type == "WallOverlay" then
+    if moveProps.type == "Window" or moveProps.type == "WindowObject" then
         return true, FurnitureNudgeRules.CANDIDATE_REASON_NOT_MOVEABLE
     end
     return false, nil
@@ -219,15 +264,27 @@ function FurnitureNudgeRules.requiresTool(moveProps)
     return requiresTool(moveProps)
 end
 
-function FurnitureNudgeRules.getEnduranceCost(candidate, settings)
+function FurnitureNudgeRules.getEnduranceCost(candidate, settings, suppressDebugLog)
     if not candidate then
         return 0
     end
     local moveProps = candidate.moveProps or (candidate.object and ISMoveableSpriteProps.fromObject(candidate.object)) or nil
-    return calculateEnduranceCostForMoveProps(moveProps, settings)
+    local baseCost = calculateEnduranceCostForMoveProps(moveProps, settings)
+    local fluidLiters = getFluidLitersFromObject(candidate.object)
+    local fluidSurcharge = fluidLiters * FLUID_ENDURANCE_PER_LITER
+    local finalCost = baseCost + fluidSurcharge
+
+    if not suppressDebugLog and settings and settings.get("QoLforSacriel_DebugLogs") == true then
+        local logger = _G.QoLforSacriel_Logger
+        if logger and logger.debug then
+            logger.debug("FurnitureNudge endurance cost: base=" .. tostring(baseCost) .. " fluidLiters=" .. tostring(fluidLiters) .. " fluidExtra=" .. tostring(fluidSurcharge) .. " final=" .. tostring(finalCost))
+        end
+    end
+
+    return finalCost
 end
 
-function FurnitureNudgeRules.isTooTiredForCandidate(playerObj, candidate, settings)
+function FurnitureNudgeRules.isTooTiredForCandidate(playerObj, candidate, settings, suppressDebugLog)
     if not playerObj or not candidate then
         return false
     end
@@ -241,10 +298,10 @@ function FurnitureNudgeRules.isTooTiredForCandidate(playerObj, candidate, settin
     end
 
     local currentEndurance = stats:get(CharacterStat.ENDURANCE)
-    local cost = FurnitureNudgeRules.getEnduranceCost(candidate, settings)
+    local cost = FurnitureNudgeRules.getEnduranceCost(candidate, settings, suppressDebugLog)
     local projectedEndurance = currentEndurance - cost
 
-    if settings and settings.get("QoLforSacriel_DebugLogs") == true then
+    if not suppressDebugLog and settings and settings.get("QoLforSacriel_DebugLogs") == true then
         local logger = _G.QoLforSacriel_Logger
         if logger and logger.debug then
             logger.debug("FurnitureNudge endurance gate: current=" .. tostring(currentEndurance) .. " cost=" .. tostring(cost) .. " projected=" .. tostring(projectedEndurance))
