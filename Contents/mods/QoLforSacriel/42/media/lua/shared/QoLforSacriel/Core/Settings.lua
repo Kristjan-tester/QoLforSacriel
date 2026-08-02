@@ -18,6 +18,7 @@ local defaults = {
 
     QoLforSacriel_UIFixes_SkillFilterIncludePartialXP = true,
     QoLforSacriel_UIFixes_EnableWaterDepthHints = true,
+    QoLforSacriel_UIFixes_EnableHeavyLoadHurtFeedback = true,
     QoLforSacriel_UIFixes_EnableSoundDirection = true,
     QoLforSacriel_UIFixes_WaterDepthHints_OverlayRadius = 3,
     QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount = 2,
@@ -87,6 +88,7 @@ local MOD_OPTION_KEY_BY_SETTING = {
     QoLforSacriel_UIFixes_EnableSkillFilter = "enableSkillFilter",
     QoLforSacriel_UIFixes_SkillFilterIncludePartialXP = "skillFilterIncludePartialXP",
     QoLforSacriel_UIFixes_EnableWaterDepthHints = "enableWaterDepthHints",
+    QoLforSacriel_UIFixes_EnableHeavyLoadHurtFeedback = "enableHeavyLoadHurtFeedback",
     QoLforSacriel_UIFixes_WaterDepthHints_OverlayRadius = "waterDepthOverlayRadius",
     QoLforSacriel_UIFixes_EnableSoundDirection = "enableSoundDirection",
     QoLforSacriel_EnableDragDrop = "enableDragDrop",
