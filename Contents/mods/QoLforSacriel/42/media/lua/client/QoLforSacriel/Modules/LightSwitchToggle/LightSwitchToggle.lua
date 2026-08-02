@@ -4,128 +4,7 @@ local installed = false
 local DEFAULT_RANGE = 1
 local MAX_RANGE = 5
 local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
-local HOTKEY_SETTING = "QoLforSacriel_LightSwitchToggle_Hotkey"
 local HOTKEY_OPTION_ID = "lightSwitchToggleHotkey"
-
-local FKEY_TO_CODE = {
-    F1 = Keyboard.KEY_F1,
-    F2 = Keyboard.KEY_F2,
-    F3 = Keyboard.KEY_F3,
-    F4 = Keyboard.KEY_F4,
-    F5 = Keyboard.KEY_F5,
-    F6 = Keyboard.KEY_F6,
-    F7 = Keyboard.KEY_F7,
-    F8 = Keyboard.KEY_F8,
-    F9 = Keyboard.KEY_F9,
-    F10 = Keyboard.KEY_F10,
-    F11 = Keyboard.KEY_F11,
-    F12 = Keyboard.KEY_F12,
-}
-
-local ALPHA_TO_CODE = {
-    A = Keyboard.KEY_A, B = Keyboard.KEY_B, C = Keyboard.KEY_C, D = Keyboard.KEY_D,
-    E = Keyboard.KEY_E, F = Keyboard.KEY_F, G = Keyboard.KEY_G, H = Keyboard.KEY_H,
-    I = Keyboard.KEY_I, J = Keyboard.KEY_J, K = Keyboard.KEY_K, L = Keyboard.KEY_L,
-    M = Keyboard.KEY_M, N = Keyboard.KEY_N, O = Keyboard.KEY_O, P = Keyboard.KEY_P,
-    Q = Keyboard.KEY_Q, R = Keyboard.KEY_R, S = Keyboard.KEY_S, T = Keyboard.KEY_T,
-    U = Keyboard.KEY_U, V = Keyboard.KEY_V, W = Keyboard.KEY_W, X = Keyboard.KEY_X,
-    Y = Keyboard.KEY_Y, Z = Keyboard.KEY_Z,
-}
-
-local DIGIT_TO_CODE = {
-    ["0"] = Keyboard.KEY_0,
-    ["1"] = Keyboard.KEY_1,
-    ["2"] = Keyboard.KEY_2,
-    ["3"] = Keyboard.KEY_3,
-    ["4"] = Keyboard.KEY_4,
-    ["5"] = Keyboard.KEY_5,
-    ["6"] = Keyboard.KEY_6,
-    ["7"] = Keyboard.KEY_7,
-    ["8"] = Keyboard.KEY_8,
-    ["9"] = Keyboard.KEY_9,
-}
-
-local NUMPAD_TO_CODE = {
-    NUMPAD0 = Keyboard.KEY_NUMPAD0,
-    NUMPAD1 = Keyboard.KEY_NUMPAD1,
-    NUMPAD2 = Keyboard.KEY_NUMPAD2,
-    NUMPAD3 = Keyboard.KEY_NUMPAD3,
-    NUMPAD4 = Keyboard.KEY_NUMPAD4,
-    NUMPAD5 = Keyboard.KEY_NUMPAD5,
-    NUMPAD6 = Keyboard.KEY_NUMPAD6,
-    NUMPAD7 = Keyboard.KEY_NUMPAD7,
-    NUMPAD8 = Keyboard.KEY_NUMPAD8,
-    NUMPAD9 = Keyboard.KEY_NUMPAD9,
-}
-
-local EXTRA_TOKEN_TO_CODE = {
-    MINUS = Keyboard.KEY_MINUS,
-    EQUALS = Keyboard.KEY_EQUALS,
-    COMMA = Keyboard.KEY_COMMA,
-    PERIOD = Keyboard.KEY_PERIOD,
-    SLASH = Keyboard.KEY_SLASH,
-    SEMICOLON = Keyboard.KEY_SEMICOLON,
-    APOSTROPHE = Keyboard.KEY_APOSTROPHE,
-    LBRACKET = Keyboard.KEY_LBRACKET,
-    RBRACKET = Keyboard.KEY_RBRACKET,
-    BACKSLASH = Keyboard.KEY_BACKSLASH,
-    GRAVE = Keyboard.KEY_GRAVE,
-    SPACE = Keyboard.KEY_SPACE,
-    TAB = Keyboard.KEY_TAB,
-}
-
-local function trimText(value)
-    local text = tostring(value or "")
-    text = text:gsub("^%s+", "")
-    text = text:gsub("%s+$", "")
-    return text
-end
-
-local function normalizeHotkeyToken(value)
-    local token = trimText(value)
-    if token == "" then
-        return nil
-    end
-
-    token = string.upper(token)
-    token = token:gsub("%s+", "")
-    if token:sub(1, 4) == "KEY_" then
-        token = token:sub(5)
-    end
-    if token == "UNBOUND" or token == "NONE" then
-        return nil
-    end
-    return token
-end
-
-local function resolveKeyCodeFromToken(token)
-    local normalized = normalizeHotkeyToken(token)
-    if not normalized then
-        return nil
-    end
-
-    local keyCode = FKEY_TO_CODE[normalized]
-    if keyCode then
-        return keyCode
-    end
-
-    keyCode = ALPHA_TO_CODE[normalized]
-    if keyCode then
-        return keyCode
-    end
-
-    keyCode = DIGIT_TO_CODE[normalized]
-    if keyCode then
-        return keyCode
-    end
-
-    keyCode = NUMPAD_TO_CODE[normalized]
-    if keyCode then
-        return keyCode
-    end
-
-    return EXTRA_TOKEN_TO_CODE[normalized]
-end
 
 local function getLightSwitchHotkeyOption()
     if not PZAPI or not PZAPI.ModOptions or not PZAPI.ModOptions.getOptions then
@@ -147,29 +26,6 @@ local function getHotkeyBindingName()
     end
 
     return getTextOrNull("UI_QoLforSacriel_Modules_LightSwitchToggleHotkey") or "Toggle Nearby Light Switch Key"
-end
-
-local function getConfiguredHotkeyBinding(settings)
-    local value = settings.get(HOTKEY_SETTING)
-    if value == nil then
-        return Keyboard.KEY_F
-    end
-
-    local numericValue = tonumber(value)
-    if numericValue ~= nil then
-        local keyCode = math.floor(numericValue)
-        if keyCode > 0 then
-            return keyCode
-        end
-        return nil
-    end
-
-    local token = normalizeHotkeyToken(value)
-    if not token then
-        return Keyboard.KEY_F
-    end
-
-    return resolveKeyCodeFromToken(token)
 end
 
 local function getExpectedModifierState()
@@ -211,13 +67,7 @@ local function isModifierDown(functionName)
     return state == true
 end
 
-local function isFallbackHotkeyMatch(key, settings)
-    local expectedKey = getConfiguredHotkeyBinding(settings)
-    if not expectedKey or key ~= expectedKey then
-        return false
-    end
-
-    local expectedCtrl, expectedShift, expectedAlt = getExpectedModifierState()
+local function isModifierStateMatched(expectedCtrl, expectedShift, expectedAlt)
     local ctrlDown = isModifierDown("isCtrlKeyDown")
     local shiftDown = isModifierDown("isShiftKeyDown")
     local altDown = isModifierDown("isAltKeyDown")
@@ -345,23 +195,26 @@ local function findNearestLightSwitch(playerObj, settings)
     return best and best.lightSwitch or nil
 end
 
-local function matchesToggleHotkey(key, settings)
+local function matchesToggleHotkey(key)
     local core = getCore and getCore()
-    if core and core.isKey then
-        local ok, matched = pcall(core.isKey, core, getHotkeyBindingName(), key)
-        if ok and matched == true then
-            return true
-        end
+    if not core or not core.isKey then
+        return false
     end
 
-    return isFallbackHotkeyMatch(key, settings)
+    local ok, matched = pcall(core.isKey, core, getHotkeyBindingName(), key)
+    if not ok or matched ~= true then
+        return false
+    end
+
+    local expectedCtrl, expectedShift, expectedAlt = getExpectedModifierState()
+    return isModifierStateMatched(expectedCtrl, expectedShift, expectedAlt)
 end
 
 local function onKeyStartPressed(key, settings, logger)
     if settings.isEnabled("QoLforSacriel_EnableLightSwitchToggle") ~= true then
         return
     end
-    if not matchesToggleHotkey(key, settings) then
+    if not matchesToggleHotkey(key) then
         return
     end
 

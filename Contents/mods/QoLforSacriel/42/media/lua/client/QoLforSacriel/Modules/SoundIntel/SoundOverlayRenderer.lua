@@ -185,6 +185,12 @@ local function arrowStyle(config, cue)
     }
 end
 
+local function baseRingRadius(config)
+    local scalePct = (config and config.arrowScalePercent) or 100
+    local baseScale = scalePct / 100
+    return math.floor((58 * baseScale) + 0.5)
+end
+
 local function sourceLabelForCue(cue)
     if cue.feed == "ambient" and type(cue.source) == "string" and cue.source ~= "" then
         return cue.source
@@ -351,8 +357,9 @@ function SoundOverlayRenderer.renderCue(playerObj, cue, nowMs, config)
         if label == "" then
             label = "sound"
         end
-        local labelX = x + (ux * 8)
-        local labelY = y + (uy * 8)
+        local labelRadius = baseRingRadius(config)
+        local labelX = centerX + (ux * (labelRadius + 8))
+        local labelY = centerY + (uy * (labelRadius + 8))
         getTextManager():DrawString(UIFont.Small, labelX + 6, labelY + 4, label, 1.0, 1.0, 1.0, a)
     end
 

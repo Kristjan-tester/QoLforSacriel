@@ -6,29 +6,13 @@ local originalUpdateSearchFocusCategories = nil
 local DEFAULT_SHALLOW_MIN_WATER_COUNT = 2
 local DEFAULT_MEDIUM_MIN_WATER_COUNT = 4
 local DEFAULT_DEEP_MIN_WATER_COUNT = 7
-local PUDDLE_MIN = 0.09
-local DEFAULT_SHALLOW_MIN_PUDDLE = 0.20
-local DEFAULT_MEDIUM_MIN_PUDDLE = 0.50
-local DEFAULT_DEEP_MIN_PUDDLE = 0.75
+local MIN_PUDDLE_VALUE = 0.09
+local PUDDLE_TO_LITERS = 10
+local MAX_TILE_WATER_LITERS = 10
 local OVERLAY_REFRESH_MS = 500
 local OVERLAY_MARGIN = 64
 
 local overlayStateByPlayer = {}
-
-local IsoFlagType_water = (IsoFlagType and IsoFlagType.water) or nil
-local WATER_IDX = 63
-if IsoFlagType_water and IsoFlagType_water.index then
-    local ok, value = pcall(function()
-        return IsoFlagType_water:index()
-    end)
-    if ok and type(value) == "number" then
-        WATER_IDX = value
-    end
-end
-
-local hasEnumHas = nil
-local hasEnumIs = nil
-local hasSquareEnumIs = nil
 
 local function clampInteger(value, fallback, minValue, maxValue)
     local n = tonumber(value)
@@ -45,48 +29,38 @@ local function clampInteger(value, fallback, minValue, maxValue)
     return n
 end
 
-local function clampNumber(value, fallback, minValue, maxValue)
-    local n = tonumber(value)
-    if not n then
-        n = fallback
+local function inferNaturalMediumMin(shallowMin, deepMin)
+    local span = deepMin - shallowMin
+    local inferred = shallowMin + math.floor((span * 0.4) + 0.5)
+    if inferred < shallowMin then
+        return shallowMin
     end
-    if n < minValue then
-        return minValue
+    if inferred > deepMin then
+        return deepMin
     end
-    if n > maxValue then
-        return maxValue
-    end
-    return n
+    return inferred
 end
 
 local function getWaterDepthConfig(settings)
-    local shallowPuddleMin = clampNumber(
-        settings.get("QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinPuddle"),
-        DEFAULT_SHALLOW_MIN_PUDDLE,
-        PUDDLE_MIN,
-        1.0
+    local shallowMin = clampInteger(
+        settings.get("QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount"),
+        DEFAULT_SHALLOW_MIN_WATER_COUNT,
+        0,
+        MAX_TILE_WATER_LITERS
     )
-    local mediumPuddleMin = clampNumber(
-        settings.get("QoLforSacriel_UIFixes_WaterDepthHints_MediumMinPuddle"),
-        DEFAULT_MEDIUM_MIN_PUDDLE,
-        shallowPuddleMin,
-        1.0
+    local deepMin = clampInteger(
+        settings.get("QoLforSacriel_UIFixes_WaterDepthHints_DeepMinWaterCount"),
+        DEFAULT_DEEP_MIN_WATER_COUNT,
+        shallowMin,
+        MAX_TILE_WATER_LITERS
     )
-    local deepPuddleMin = clampNumber(
-        settings.get("QoLforSacriel_UIFixes_WaterDepthHints_DeepMinPuddle"),
-        DEFAULT_DEEP_MIN_PUDDLE,
-        mediumPuddleMin,
-        1.0
-    )
+    local mediumMin = inferNaturalMediumMin(shallowMin, deepMin)
 
     return {
         radius = clampInteger(settings.get("QoLforSacriel_UIFixes_WaterDepthHints_OverlayRadius"), 3, 1, 6),
-        shallowMin = clampInteger(settings.get("QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount"), DEFAULT_SHALLOW_MIN_WATER_COUNT, 0, 25),
-        mediumMin = clampInteger(settings.get("QoLforSacriel_UIFixes_WaterDepthHints_MediumMinWaterCount"), DEFAULT_MEDIUM_MIN_WATER_COUNT, 0, 25),
-        deepMin = clampInteger(settings.get("QoLforSacriel_UIFixes_WaterDepthHints_DeepMinWaterCount"), DEFAULT_DEEP_MIN_WATER_COUNT, 0, 25),
-        shallowPuddleMin = shallowPuddleMin,
-        mediumPuddleMin = mediumPuddleMin,
-        deepPuddleMin = deepPuddleMin,
+        shallowMin = shallowMin,
+        mediumMin = mediumMin,
+        deepMin = deepMin,
     }
 end
 
@@ -192,72 +166,6 @@ local function isSearchModeEnabled(playerIndex)
     return manager and manager.isSearchMode == true
 end
 
-local function isNaturalWaterSquare(square)
-    if not square then
-        return false
-    end
-
-    local props = square.getProperties and square:getProperties() or nil
-    if props then
-        if props.has then
-            if props:has(WATER_IDX) then
-                return true
-            end
-            if IsoFlagType_water then
-                if hasEnumHas == nil then
-                    hasEnumHas = pcall(function()
-                        return props:has(IsoFlagType_water)
-                    end)
-                end
-                if hasEnumHas and props:has(IsoFlagType_water) then
-                    return true
-                end
-            end
-        end
-
-        if props.Is then
-            if props:Is(WATER_IDX) then
-                return true
-            end
-            if props:Is("water") then
-                return true
-            end
-            if IsoFlagType_water then
-                if hasEnumIs == nil then
-                    hasEnumIs = pcall(function()
-                        return props:Is(IsoFlagType_water)
-                    end)
-                end
-                if hasEnumIs and props:Is(IsoFlagType_water) then
-                    return true
-                end
-            end
-        end
-    end
-
-    if square.Is then
-        if square:Is("water") then
-            return true
-        end
-        if IsoFlagType_water then
-            if hasSquareEnumIs == nil then
-                hasSquareEnumIs = pcall(function()
-                    return square:Is(IsoFlagType_water)
-                end)
-            end
-            if hasSquareEnumIs and square:Is(IsoFlagType_water) then
-                return true
-            end
-        end
-    end
-
-    local floor = square:getFloor()
-    if floor and floor:hasProperty(IsoFlagType.water) then
-        return true
-    end
-    return false
-end
-
 local function getPuddleValue(square)
     if not square or not square.getPuddlesInGround then
         return 0
@@ -269,101 +177,81 @@ local function getPuddleValue(square)
     return value
 end
 
-local function isPuddleSquare(square, minValue)
-    local threshold = tonumber(minValue) or PUDDLE_MIN
-    return getPuddleValue(square) >= threshold
-end
-
-local function resolveWaterSource(square, logger, config)
+local function getTileWaterLiters(square)
     if not square then
-        return nil, nil
+        return 0
     end
-
-    if isNaturalWaterSquare(square) then
-        if logger then
-            logger.debug("UIFixes.WaterDepthHints source=natural at " .. fmtSquare(square))
-        end
-        return square, "natural"
+    local puddleValue = getPuddleValue(square)
+    if puddleValue < MIN_PUDDLE_VALUE then
+        return 0
     end
-
-    local shallowPuddleMin = config and config.shallowPuddleMin or PUDDLE_MIN
-    if isPuddleSquare(square, shallowPuddleMin) then
-        if logger then
-            logger.debug("UIFixes.WaterDepthHints source=puddle at " .. fmtSquare(square) .. " puddles=" .. tostring(getPuddleValue(square)))
-        end
-        return square, "puddle"
-    end
-
-    if logger then
-        logger.debug("UIFixes.WaterDepthHints source=none at " .. fmtSquare(square) .. " puddles=" .. tostring(getPuddleValue(square)))
-    end
-
-    return nil, nil
+    return puddleValue * PUDDLE_TO_LITERS
 end
 
-local function classifyDepth(square, sourceKind, logger, config)
+local function classifyDepth(square, logger, config)
     if not square then
         return nil
     end
 
-    if sourceKind == "puddle" then
-        local puddleValue = getPuddleValue(square)
-        if puddleValue < config.shallowPuddleMin then
-            if logger then
-                logger.debug("UIFixes.WaterDepthHints depth=none source=puddle value=" .. tostring(puddleValue) .. " below shallowMin=" .. tostring(config.shallowPuddleMin) .. " at " .. fmtSquare(square))
-            end
-            return nil
-        end
-        if puddleValue >= config.deepPuddleMin then
-            if logger then
-                logger.debug("UIFixes.WaterDepthHints depth=deep source=puddle value=" .. tostring(puddleValue) .. " at " .. fmtSquare(square))
-            end
-            return "deep"
-        end
-        if puddleValue >= config.mediumPuddleMin then
-            if logger then
-                logger.debug("UIFixes.WaterDepthHints depth=medium source=puddle value=" .. tostring(puddleValue) .. " at " .. fmtSquare(square))
-            end
-            return "medium"
-        end
+    local liters = getTileWaterLiters(square)
+    if liters >= config.deepMin then
         if logger then
-            logger.debug("UIFixes.WaterDepthHints depth=shallow source=puddle value=" .. tostring(puddleValue) .. " at " .. fmtSquare(square))
-        end
-        return "shallow"
-    end
-
-    local waterCount = 0
-    for dy = -2, 2 do
-        for dx = -2, 2 do
-            local sq = getSquare(square:getX() + dx, square:getY() + dy, square:getZ())
-            if isNaturalWaterSquare(sq) then
-                waterCount = waterCount + 1
-            end
-        end
-    end
-
-    if waterCount >= config.deepMin then
-        if logger then
-            logger.debug("UIFixes.WaterDepthHints depth=deep naturalCount=" .. tostring(waterCount) .. " at " .. fmtSquare(square))
+            logger.debug("UIFixes.WaterDepthHints depth=deep liters=" .. tostring(liters) .. " at " .. fmtSquare(square))
         end
         return "deep"
     end
-    if waterCount >= config.mediumMin then
+    if liters >= config.mediumMin then
         if logger then
-            logger.debug("UIFixes.WaterDepthHints depth=medium naturalCount=" .. tostring(waterCount) .. " at " .. fmtSquare(square))
+            logger.debug("UIFixes.WaterDepthHints depth=medium liters=" .. tostring(liters) .. " at " .. fmtSquare(square))
         end
         return "medium"
     end
-    if waterCount >= config.shallowMin then
+    if liters >= config.shallowMin then
         if logger then
-            logger.debug("UIFixes.WaterDepthHints depth=shallow naturalCount=" .. tostring(waterCount) .. " at " .. fmtSquare(square))
+            logger.debug("UIFixes.WaterDepthHints depth=shallow liters=" .. tostring(liters) .. " at " .. fmtSquare(square))
         end
         return "shallow"
     end
     if logger then
-        logger.debug("UIFixes.WaterDepthHints depth=none naturalCount=" .. tostring(waterCount) .. " at " .. fmtSquare(square))
+        logger.debug("UIFixes.WaterDepthHints depth=none liters=" .. tostring(liters) .. " at " .. fmtSquare(square))
     end
     return nil
+end
+
+local function getForagingLevel(playerObj)
+    if not playerObj or not playerObj.getPerkLevel then
+        return 0
+    end
+
+    local perk = nil
+    if Perks and Perks.PlantScavenging then
+        perk = Perks.PlantScavenging
+    elseif PerkFactory and PerkFactory.Perks and PerkFactory.Perks.PlantScavenging then
+        perk = PerkFactory.Perks.PlantScavenging
+    end
+
+    if not perk then
+        return 0
+    end
+
+    local ok, level = pcall(function()
+        return playerObj:getPerkLevel(perk)
+    end)
+    if not ok or type(level) ~= "number" then
+        return 0
+    end
+    return level
+end
+
+local function shouldShowLitersForPlayer(playerObj, settings)
+    if settings.get("QoLforSacriel_UIFixes_WaterDepthHints_ShowLitersAboveForaging3") ~= true then
+        return false
+    end
+    return getForagingLevel(playerObj) > 3
+end
+
+local function formatLitersText(liters)
+    return string.format("%.1fL", liters)
 end
 
 local function shouldRenderForPlayer(playerIndex, settings, logger)
@@ -419,21 +307,19 @@ local function refreshOverlayData(playerObj, playerIndex, state, logger, setting
                 local sq = getSquare(cx + dx, cy + dy, cz)
                 if sq then
                     scanned = scanned + 1
-                    local sourceSquare, sourceKind = resolveWaterSource(sq, nil, config)
-                    if sourceSquare then
-                        local depthKind = classifyDepth(sourceSquare, sourceKind, nil, config)
-                        if depthKind then
-                            accepted = accepted + 1
-                            state.count = state.count + 1
-                            local entry = state.entries[state.count] or {}
-                            state.entries[state.count] = entry
-                            entry.x = sourceSquare:getX()
-                            entry.y = sourceSquare:getY()
-                            entry.z = sourceSquare:getZ()
-                            entry.kind = depthKind
-                            entry.source = sourceKind
-                            entry.text = getOverlayText(depthKind)
-                        end
+                    local depthKind = classifyDepth(sq, nil, config)
+                    if depthKind then
+                        accepted = accepted + 1
+                        state.count = state.count + 1
+                        local entry = state.entries[state.count] or {}
+                        state.entries[state.count] = entry
+                        entry.x = sq:getX()
+                        entry.y = sq:getY()
+                        entry.z = sq:getZ()
+                        entry.kind = depthKind
+                        entry.source = "amount"
+                        entry.liters = getTileWaterLiters(sq)
+                        entry.text = getOverlayText(depthKind)
                     end
                 end
             end
@@ -462,11 +348,13 @@ local function colorForKind(kind)
     return 1.00, 0.92, 0.20
 end
 
-local function drawOverlayForPlayer(playerObj, playerIndex, state)
+local function drawOverlayForPlayer(playerObj, playerIndex, state, settings)
     local textManager = getTextManager and getTextManager() or nil
     if not textManager then
         return
     end
+
+    local showLiters = shouldShowLitersForPlayer(playerObj, settings)
 
     local z = playerObj:getZ()
     local playerNum = playerObj:getPlayerNum()
@@ -484,8 +372,12 @@ local function drawOverlayForPlayer(playerObj, playerIndex, state)
             local sy = IsoUtils.YToScreenExact(entry.x + 0.5, entry.y + 0.5, z, 0)
             if sx >= -OVERLAY_MARGIN and sy >= -OVERLAY_MARGIN and sx <= worldW + OVERLAY_MARGIN and sy <= worldH + OVERLAY_MARGIN then
                 local r, g, b = colorForKind(entry.kind)
-                local w = textManager:MeasureStringX(UIFont.Small, entry.text)
-                textManager:DrawString(UIFont.Small, sx - (w / 2), sy - 12, entry.text, r, g, b, 0.95)
+                local displayText = entry.text
+                if showLiters and type(entry.liters) == "number" then
+                    displayText = formatLitersText(entry.liters)
+                end
+                local w = textManager:MeasureStringX(UIFont.Small, displayText)
+                textManager:DrawString(UIFont.Small, sx - (w / 2), sy - 12, displayText, r, g, b, 0.95)
             end
         end
     end
@@ -505,7 +397,7 @@ local function onPostRender(settings, logger)
                 if getTimestampMs() >= state.nextRefresh then
                     refreshOverlayData(playerObj, playerIndex, state, logger, settings)
                 end
-                drawOverlayForPlayer(playerObj, playerIndex, state)
+                drawOverlayForPlayer(playerObj, playerIndex, state, settings)
             else
                 state.count = 0
             end

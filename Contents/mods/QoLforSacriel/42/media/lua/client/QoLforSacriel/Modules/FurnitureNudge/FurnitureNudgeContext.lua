@@ -100,7 +100,7 @@ local function addDirectionMenuForCandidate(menuContext, candidate, playerObj, s
         return
     end
 
-    if rules.isTooTiredForCandidate(playerObj, candidate, settings) then
+    if rules.isTooTiredForCandidate(playerObj, candidate, settings, true) then
         candidate.disableReason = rules.CANDIDATE_REASON_TOO_TIRED
         logDisableReason(settings, logger, candidate.disableReason, candidate)
         addDisabledNamedOption(menuContext, label, "UI_QoLforSacriel_FurnitureNudgeTooTired", "too tired to nudge")
@@ -164,7 +164,7 @@ local function installMenuHook(settings, logger)
                 return
             end
 
-            if rules.isTooTiredForCandidate(playerObj, candidate, settings) then
+            if rules.isTooTiredForCandidate(playerObj, candidate, settings, true) then
                 candidate.disableReason = rules.CANDIDATE_REASON_TOO_TIRED
                 logDisableReason(settings, logger, candidate.disableReason, candidate)
                 addUnavailableOption(context, "UI_QoLforSacriel_FurnitureNudgeTooTired", "too tired to nudge")

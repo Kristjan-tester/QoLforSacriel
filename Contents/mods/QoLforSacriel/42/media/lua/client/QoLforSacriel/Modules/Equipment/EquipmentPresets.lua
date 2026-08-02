@@ -14,8 +14,11 @@ local HOTKEY_SETTING_PREFIX = "QoLforSacriel_Equipment_PresetHotkey"
 local hotkeyCacheSignature = nil
 local hotkeyCacheMap = {}
 local hotkeyCachePresetCount = 0
+local pendingHotkeyToggle = nil
+local pendingHotkeyWaitLogged = false
 local getConfiguredPresetCount
 local getConfiguredHotkeyBinding
+local getConfiguredBindingComboText
 
 local FKEY_TO_CODE = {
     F1 = Keyboard.KEY_F1,
@@ -166,13 +169,7 @@ local function getExpectedModifierState(index)
     return ctrl, shift, alt
 end
 
-local function isKeyAndModifiersMatched(index, key, settings)
-    local keyCode = getConfiguredHotkeyBinding(settings, index)
-    if not keyCode or key ~= keyCode then
-        return false
-    end
-
-    local expectedCtrl, expectedShift, expectedAlt = getExpectedModifierState(index)
+local function isModifierStateMatched(expectedCtrl, expectedShift, expectedAlt)
     local ctrlDown = isModifierDown("isCtrlKeyDown")
     local shiftDown = isModifierDown("isShiftKeyDown")
     local altDown = isModifierDown("isAltKeyDown")
@@ -180,6 +177,25 @@ local function isKeyAndModifiersMatched(index, key, settings)
     return ctrlDown == expectedCtrl
         and shiftDown == expectedShift
         and altDown == expectedAlt
+end
+
+local function areAnyModifierKeysDown()
+    return isModifierDown("isCtrlKeyDown")
+        or isModifierDown("isShiftKeyDown")
+        or isModifierDown("isAltKeyDown")
+end
+
+local function getTimedActionQueueDepth(playerObj)
+    if not playerObj or not ISTimedActionQueue or not ISTimedActionQueue.getTimedActionQueue then
+        return -1
+    end
+
+    local queue = ISTimedActionQueue.getTimedActionQueue(playerObj)
+    if not queue or not queue.queue then
+        return -1
+    end
+
+    return #queue.queue
 end
 
 local function getDefaultHotkeyToken(index)
@@ -238,8 +254,8 @@ end
 
 getConfiguredHotkeyBinding = function(settings, index)
     local value = settings.get(getHotkeySettingName(index))
+    local defaultToken = getDefaultHotkeyToken(index)
     if value == nil then
-        local defaultToken = getDefaultHotkeyToken(index)
         return getDefaultHotkeyCode(index), defaultToken
     end
 
@@ -254,7 +270,10 @@ getConfiguredHotkeyBinding = function(settings, index)
 
     local normalized = normalizeHotkeyToken(value)
     if not normalized then
-        local defaultToken = getDefaultHotkeyToken(index)
+        return getDefaultHotkeyCode(index), defaultToken
+    end
+
+    if normalized == "DEFAULT" then
         return getDefaultHotkeyCode(index), defaultToken
     end
 
@@ -284,10 +303,13 @@ local function refreshHotkeyCache(settings, logger)
 
     hotkeyCacheSignature = signature
     hotkeyCacheMap = {}
-    hotkeyCachePresetCount = presetCount
+    hotkeyCachePresetCount = MAX_PRESET_COUNT
+    local hotkeySummary = {}
 
-    for i = 1, presetCount do
+    -- Keep all preset hotkeys active even when fewer slots are shown in the context menu.
+    for i = 1, MAX_PRESET_COUNT do
         local keyCode, token = getConfiguredHotkeyBinding(settings, i)
+        hotkeySummary[#hotkeySummary + 1] = "P" .. tostring(i) .. "=" .. getConfiguredBindingComboText(settings, i)
         if keyCode then
             if not hotkeyCacheMap[keyCode] then
                 hotkeyCacheMap[keyCode] = i
@@ -299,6 +321,10 @@ local function refreshHotkeyCache(settings, logger)
                 logger.debug("Equipment preset invalid hotkey token for preset " .. tostring(i) .. ": " .. tostring(token))
             end
         end
+    end
+
+    if logger and logger.debug then
+        logger.debug("Equipment preset keybind map refreshed: " .. table.concat(hotkeySummary, "; "))
     end
 end
 
@@ -316,6 +342,52 @@ local function getConfiguredBindingText(settings, index)
         end
     end
     return keyName
+end
+
+getConfiguredBindingComboText = function(settings, index)
+    local keyCode = getConfiguredHotkeyBinding(settings, index)
+    if not keyCode then
+        return getTextOrNull("UI_QoLforSacriel_EquipmentHotkeyUnbound") or "Unbound"
+    end
+
+    local parts = {}
+    local ctrl, shift, alt = getExpectedModifierState(index)
+    if ctrl then
+        parts[#parts + 1] = "Ctrl"
+    end
+    if shift then
+        parts[#parts + 1] = "Shift"
+    end
+    if alt then
+        parts[#parts + 1] = "Alt"
+    end
+    parts[#parts + 1] = getConfiguredBindingText(settings, index)
+
+    return table.concat(parts, "+")
+end
+
+local function getPressedComboText(key)
+    local parts = {}
+    if isModifierDown("isCtrlKeyDown") then
+        parts[#parts + 1] = "Ctrl"
+    end
+    if isModifierDown("isShiftKeyDown") then
+        parts[#parts + 1] = "Shift"
+    end
+    if isModifierDown("isAltKeyDown") then
+        parts[#parts + 1] = "Alt"
+    end
+
+    local keyName = tostring(key)
+    if type(getKeyName) == "function" then
+        local ok, resolvedName = pcall(getKeyName, key)
+        if ok and resolvedName and tostring(resolvedName) ~= "" then
+            keyName = tostring(resolvedName)
+        end
+    end
+    parts[#parts + 1] = keyName
+
+    return table.concat(parts, "+")
 end
 
 local function getEntryFullType(entry)
@@ -349,7 +421,7 @@ local function createPresetEntry(fullType, handMode)
 end
 
 getConfiguredPresetCount = function(settings)
-    local count = tonumber(settings.get("QoLforSacriel_Equipment_PresetCount")) or 3
+    local count = tonumber(settings.get("QoLforSacriel_Equipment_PresetCount")) or 2
     return math.max(1, math.min(MAX_PRESET_COUNT, math.floor(count)))
 end
 
@@ -850,30 +922,105 @@ local function isPresetEntryEquipped(playerObj, entry)
     return isTypeEquipped(playerObj, fullType)
 end
 
-local function queueEquipByType(playerObj, fullType, handMode)
-    local item = playerObj:getInventory():getFirstTypeRecurse(fullType)
+local function findInventoryItemByType(playerObj, fullType)
+    if not playerObj or not fullType or fullType == "" then
+        return nil
+    end
+
+    local inventory = playerObj:getInventory()
+    if not inventory then
+        return nil
+    end
+
+    local item = inventory:getFirstTypeRecurse(fullType)
+    if item then
+        return item
+    end
+
+    local shortType = fullType:match("[^%.]+$")
+    if shortType and shortType ~= "" and shortType ~= fullType then
+        item = inventory:getFirstTypeRecurse(shortType)
+        if item and item.getFullType and item:getFullType() == fullType then
+            return item
+        end
+    end
+
+    return nil
+end
+
+local function isWearableItem(item)
     if not item then
         return false
     end
 
+    if item.getBodyLocation then
+        local okBody, bodyLocation = pcall(item.getBodyLocation, item)
+        if okBody and bodyLocation and tostring(bodyLocation) ~= "" then
+            return true
+        end
+    end
+
+    if item.isClothing then
+        local okClothing, clothing = pcall(item.isClothing, item)
+        if okClothing and clothing == true then
+            return true
+        end
+    end
+
+    if item.getCategory then
+        local okCategory, category = pcall(item.getCategory, item)
+        if okCategory and category == "Clothing" then
+            return true
+        end
+    end
+
+    if item.hasTag then
+        local okTag, hasWearableTag = pcall(item.hasTag, item, "Wearable")
+        if okTag and hasWearableTag == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function queueEquipByType(playerObj, fullType, handMode, logger)
+    local item = findInventoryItemByType(playerObj, fullType)
+    if not item then
+        if logger and logger.debug then
+            logger.debug("Equipment preset equip miss: item not found for type=" .. tostring(fullType))
+        end
+        return false
+    end
+
     local playerNum = playerObj:getPlayerNum()
+    local queueBefore = getTimedActionQueueDepth(playerObj)
     if handMode == HAND_MODE_BOTH then
         if isHandModeSatisfied(playerObj, fullType, handMode) then
             return true
         end
         ISInventoryPaneContextMenu.equipWeapon(item, false, true, playerNum)
+        if logger and logger.debug then
+            logger.debug("Equipment preset equip queued: type=" .. tostring(fullType) .. ", handMode=" .. tostring(handMode) .. ", action=equipWeaponBoth, queueBefore=" .. tostring(queueBefore) .. ", queueAfter=" .. tostring(getTimedActionQueueDepth(playerObj)))
+        end
         return true
     elseif handMode == HAND_MODE_SECONDARY then
         if isHandModeSatisfied(playerObj, fullType, handMode) then
             return true
         end
         ISInventoryPaneContextMenu.equipWeapon(item, false, false, playerNum)
+        if logger and logger.debug then
+            logger.debug("Equipment preset equip queued: type=" .. tostring(fullType) .. ", handMode=" .. tostring(handMode) .. ", action=equipWeaponSecondary, queueBefore=" .. tostring(queueBefore) .. ", queueAfter=" .. tostring(getTimedActionQueueDepth(playerObj)))
+        end
         return true
     elseif handMode == HAND_MODE_PRIMARY then
         if isHandModeSatisfied(playerObj, fullType, handMode) then
             return true
         end
         ISInventoryPaneContextMenu.equipWeapon(item, true, false, playerNum)
+        if logger and logger.debug then
+            logger.debug("Equipment preset equip queued: type=" .. tostring(fullType) .. ", handMode=" .. tostring(handMode) .. ", action=equipWeaponPrimary, queueBefore=" .. tostring(queueBefore) .. ", queueAfter=" .. tostring(getTimedActionQueueDepth(playerObj)))
+        end
         return true
     end
 
@@ -881,40 +1028,66 @@ local function queueEquipByType(playerObj, fullType, handMode)
         return true
     end
 
-    if item:hasTag(ItemTag.WEARABLE) or item:getCategory() == "Clothing" then
+    if isWearableItem(item) then
         ISInventoryPaneContextMenu.wearItem(item, playerNum)
+        if logger and logger.debug then
+            logger.debug("Equipment preset equip queued: type=" .. tostring(fullType) .. ", handMode=nil, action=wearItem, queueBefore=" .. tostring(queueBefore) .. ", queueAfter=" .. tostring(getTimedActionQueueDepth(playerObj)))
+        end
         return true
     end
 
     ISInventoryPaneContextMenu.equipWeapon(item, true, false, playerNum)
+    if logger and logger.debug then
+        logger.debug("Equipment preset equip queued: type=" .. tostring(fullType) .. ", handMode=nil, action=equipWeaponPrimaryFallback, queueBefore=" .. tostring(queueBefore) .. ", queueAfter=" .. tostring(getTimedActionQueueDepth(playerObj)))
+    end
     return true
 end
 
-local function queueUnequipByType(playerObj, fullType)
+local function queueUnequipByType(playerObj, fullType, logger)
     local equipped = findWornItemByType(playerObj, fullType)
     if not equipped then
         return false
     end
 
+    local queueBefore = getTimedActionQueueDepth(playerObj)
     ISInventoryPaneContextMenu.unequipItem(equipped, playerObj:getPlayerNum())
+    if logger and logger.debug then
+        logger.debug("Equipment preset unequip queued: type=" .. tostring(fullType) .. ", queueBefore=" .. tostring(queueBefore) .. ", queueAfter=" .. tostring(getTimedActionQueueDepth(playerObj)))
+    end
     return true
 end
 
-local function shouldUnequipPreset(playerObj, presetIndex)
+local function evaluatePresetState(playerObj, presetIndex)
     local hasAny = false
+    local total = 0
+    local equipped = 0
     local allEquipped = true
 
     forEachPresetItem(playerObj, presetIndex, function(entry)
         hasAny = true
+        total = total + 1
         if not isPresetEntryEquipped(playerObj, entry) then
             allEquipped = false
+        else
+            equipped = equipped + 1
         end
     end)
 
-    if not hasAny then
+    return {
+        hasAny = hasAny,
+        total = total,
+        equipped = equipped,
+        allEquipped = allEquipped,
+    }
+end
+
+local function shouldUnequipPreset(playerObj, presetIndex)
+    local state = evaluatePresetState(playerObj, presetIndex)
+
+    if not state.hasAny then
         return false
     end
-    return allEquipped
+    return state.allEquipped
 end
 
 local function togglePreset(playerObj, presetIndex, logger)
@@ -925,7 +1098,11 @@ local function togglePreset(playerObj, presetIndex, logger)
         return
     end
 
-    local unequip = shouldUnequipPreset(playerObj, presetIndex)
+    local state = evaluatePresetState(playerObj, presetIndex)
+    local unequip = state.hasAny and state.allEquipped
+    if logger and logger.debug then
+        logger.debug("Equipment preset " .. tostring(presetIndex) .. " state: total=" .. tostring(state.total) .. ", equipped=" .. tostring(state.equipped) .. ", allEquipped=" .. tostring(state.allEquipped) .. ", mode=" .. (unequip and "unequip" or "equip"))
+    end
     local changed = 0
 
     for i = 1, #preset do
@@ -935,12 +1112,14 @@ local function togglePreset(playerObj, presetIndex, logger)
             local handMode = getEntryHandMode(entry)
             local ok = false
             if unequip then
-                ok = queueUnequipByType(playerObj, fullType)
+                ok = queueUnequipByType(playerObj, fullType, logger)
             else
-                ok = queueEquipByType(playerObj, fullType, handMode)
+                ok = queueEquipByType(playerObj, fullType, handMode, logger)
             end
             if ok then
                 changed = changed + 1
+            elseif not unequip then
+                logger.debug("Equipment preset " .. tostring(presetIndex) .. " equip miss: type=" .. tostring(fullType) .. ", handMode=" .. tostring(handMode))
             end
         end
     end
@@ -1011,21 +1190,21 @@ local function getPresetIndexFromKey(key, settings, logger)
     refreshHotkeyCache(settings, logger)
 
     local core = getCore and getCore()
-    if core and core.isKey then
-        for i = 1, hotkeyCachePresetCount do
-            if core:isKey(getPresetBindingName(i), key) then
+    if not core or not core.isKey then
+        return nil, hotkeyCachePresetCount
+    end
+
+    for i = 1, hotkeyCachePresetCount do
+        local ok, matched = pcall(core.isKey, core, getPresetBindingName(i), key)
+        if ok and matched == true then
+            local expectedCtrl, expectedShift, expectedAlt = getExpectedModifierState(i)
+            if isModifierStateMatched(expectedCtrl, expectedShift, expectedAlt) then
                 return i, hotkeyCachePresetCount
             end
         end
     end
 
-    for i = 1, hotkeyCachePresetCount do
-        if isKeyAndModifiersMatched(i, key, settings) then
-            return i, hotkeyCachePresetCount
-        end
-    end
-
-    return hotkeyCacheMap[key], hotkeyCachePresetCount
+    return nil, hotkeyCachePresetCount
 end
 
 local function onKeyStartPressed(key, settings, logger)
@@ -1036,21 +1215,49 @@ local function onKeyStartPressed(key, settings, logger)
         return
     end
 
-    local presetIndex, presetCount = getPresetIndexFromKey(key, settings, logger)
+    local presetIndex = getPresetIndexFromKey(key, settings, logger)
     if not presetIndex then
         return
     end
 
-    if presetIndex > presetCount then
+    if logger and logger.debug then
+        logger.debug("Equipment preset toggle detected: pressed=" .. getPressedComboText(key) .. ", preset=" .. tostring(presetIndex) .. ", configured=" .. getConfiguredBindingComboText(settings, presetIndex))
+    end
+
+    local expectedCtrl, expectedShift, expectedAlt = getExpectedModifierState(presetIndex)
+
+    pendingHotkeyToggle = {
+        presetIndex = presetIndex,
+        waitModifierRelease = (expectedCtrl or expectedShift or expectedAlt) == true,
+    }
+    pendingHotkeyWaitLogged = false
+end
+
+local function onTick(settings, logger)
+    local pending = pendingHotkeyToggle
+    if not pending then
         return
     end
+
+    pendingHotkeyToggle = nil
 
     local playerObj = getSpecificPlayer(0)
     if not playerObj or playerObj:isDead() then
         return
     end
 
-    togglePreset(playerObj, presetIndex, logger)
+    if pending.waitModifierRelease and areAnyModifierKeysDown() then
+        if not pendingHotkeyWaitLogged and logger and logger.debug then
+            logger.debug("Equipment preset hotkey pending until modifiers are released: preset=" .. tostring(pending.presetIndex))
+            pendingHotkeyWaitLogged = true
+        end
+        pendingHotkeyToggle = pending
+        return
+    end
+
+    pendingHotkeyWaitLogged = false
+
+    togglePreset(playerObj, pending.presetIndex, logger)
 end
 
 function EquipmentPresets.init(settings, logger)
@@ -1074,6 +1281,15 @@ function EquipmentPresets.init(settings, logger)
         end)
         if not ok then
             logger.error("Equipment.Presets key error: " .. tostring(err))
+        end
+    end)
+
+    Events.OnTick.Add(function()
+        local ok, err = pcall(function()
+            onTick(settings, logger)
+        end)
+        if not ok then
+            logger.error("Equipment.Presets tick error: " .. tostring(err))
         end
     end)
 
