@@ -1,5 +1,120 @@
 local CoreModOptions = {}
 local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
+local HOTKEY_NONE_TOKEN = "NONE"
+
+local FKEY_TO_CODE = {
+    F1 = Keyboard.KEY_F1,
+    F2 = Keyboard.KEY_F2,
+    F3 = Keyboard.KEY_F3,
+    F4 = Keyboard.KEY_F4,
+    F5 = Keyboard.KEY_F5,
+    F6 = Keyboard.KEY_F6,
+    F7 = Keyboard.KEY_F7,
+    F8 = Keyboard.KEY_F8,
+    F9 = Keyboard.KEY_F9,
+    F10 = Keyboard.KEY_F10,
+    F11 = Keyboard.KEY_F11,
+    F12 = Keyboard.KEY_F12,
+}
+
+local ALPHA_TO_CODE = {
+    A = Keyboard.KEY_A, B = Keyboard.KEY_B, C = Keyboard.KEY_C, D = Keyboard.KEY_D,
+    E = Keyboard.KEY_E, F = Keyboard.KEY_F, G = Keyboard.KEY_G, H = Keyboard.KEY_H,
+    I = Keyboard.KEY_I, J = Keyboard.KEY_J, K = Keyboard.KEY_K, L = Keyboard.KEY_L,
+    M = Keyboard.KEY_M, N = Keyboard.KEY_N, O = Keyboard.KEY_O, P = Keyboard.KEY_P,
+    Q = Keyboard.KEY_Q, R = Keyboard.KEY_R, S = Keyboard.KEY_S, T = Keyboard.KEY_T,
+    U = Keyboard.KEY_U, V = Keyboard.KEY_V, W = Keyboard.KEY_W, X = Keyboard.KEY_X,
+    Y = Keyboard.KEY_Y, Z = Keyboard.KEY_Z,
+}
+
+local DIGIT_TO_CODE = {
+    ["0"] = Keyboard.KEY_0,
+    ["1"] = Keyboard.KEY_1,
+    ["2"] = Keyboard.KEY_2,
+    ["3"] = Keyboard.KEY_3,
+    ["4"] = Keyboard.KEY_4,
+    ["5"] = Keyboard.KEY_5,
+    ["6"] = Keyboard.KEY_6,
+    ["7"] = Keyboard.KEY_7,
+    ["8"] = Keyboard.KEY_8,
+    ["9"] = Keyboard.KEY_9,
+}
+
+local NUMPAD_TO_CODE = {
+    NUMPAD0 = Keyboard.KEY_NUMPAD0,
+    NUMPAD1 = Keyboard.KEY_NUMPAD1,
+    NUMPAD2 = Keyboard.KEY_NUMPAD2,
+    NUMPAD3 = Keyboard.KEY_NUMPAD3,
+    NUMPAD4 = Keyboard.KEY_NUMPAD4,
+    NUMPAD5 = Keyboard.KEY_NUMPAD5,
+    NUMPAD6 = Keyboard.KEY_NUMPAD6,
+    NUMPAD7 = Keyboard.KEY_NUMPAD7,
+    NUMPAD8 = Keyboard.KEY_NUMPAD8,
+    NUMPAD9 = Keyboard.KEY_NUMPAD9,
+}
+
+local EXTRA_TOKEN_TO_CODE = {
+    MINUS = Keyboard.KEY_MINUS,
+    EQUALS = Keyboard.KEY_EQUALS,
+    COMMA = Keyboard.KEY_COMMA,
+    PERIOD = Keyboard.KEY_PERIOD,
+    SLASH = Keyboard.KEY_SLASH,
+    SEMICOLON = Keyboard.KEY_SEMICOLON,
+    APOSTROPHE = Keyboard.KEY_APOSTROPHE,
+    LBRACKET = Keyboard.KEY_LBRACKET,
+    RBRACKET = Keyboard.KEY_RBRACKET,
+    BACKSLASH = Keyboard.KEY_BACKSLASH,
+    GRAVE = Keyboard.KEY_GRAVE,
+    SPACE = Keyboard.KEY_SPACE,
+    TAB = Keyboard.KEY_TAB,
+}
+
+local function normalizeBindingToken(value)
+    local token = tostring(value or "")
+    token = token:gsub("^%s+", "")
+    token = token:gsub("%s+$", "")
+    if token == "" then
+        return nil
+    end
+
+    token = string.upper(token):gsub("%s+", "")
+    if token:sub(1, 4) == "KEY_" then
+        token = token:sub(5)
+    end
+    if token == "UNBOUND" then
+        token = HOTKEY_NONE_TOKEN
+    end
+    return token
+end
+
+local function resolveKeyCodeFromToken(token)
+    local normalized = normalizeBindingToken(token)
+    if not normalized or normalized == HOTKEY_NONE_TOKEN then
+        return nil
+    end
+
+    local keyCode = FKEY_TO_CODE[normalized]
+    if keyCode then
+        return keyCode
+    end
+
+    keyCode = ALPHA_TO_CODE[normalized]
+    if keyCode then
+        return keyCode
+    end
+
+    keyCode = DIGIT_TO_CODE[normalized]
+    if keyCode then
+        return keyCode
+    end
+
+    keyCode = NUMPAD_TO_CODE[normalized]
+    if keyCode then
+        return keyCode
+    end
+
+    return EXTRA_TOKEN_TO_CODE[normalized]
+end
 
 local function registerBinding(bindingName, keyCode, shift, ctrl, alt)
     local core = getCore and getCore()
@@ -10,48 +125,180 @@ local function registerBinding(bindingName, keyCode, shift, ctrl, alt)
     core:addKeyBinding(bindingName, keyCode, 0, shift == true, ctrl == true, alt == true)
 end
 
-local function syncPresetBindingFromOption(option, fallbackName, fallbackKey)
+local function getKeybindStateSource(option)
+    if option and type(option.element) == "table" then
+        return option.element
+    end
+    return option
+end
+
+local function readModifierFlag(option, state, key)
+    local value = nil
+    if state then
+        value = state[key]
+    end
+    if value == nil and option then
+        value = option[key]
+    end
+    return value == true
+end
+
+local function writeResolvedBindingState(option, keyCode, shift, ctrl, alt)
     if not option then
+        return
+    end
+
+    option.key = keyCode
+    option.shift = shift
+    option.ctrl = ctrl
+    option.alt = alt
+
+    if type(option.element) == "table" then
+        option.element.keyCode = keyCode
+        option.element.shift = shift
+        option.element.ctrl = ctrl
+        option.element.alt = alt
+    end
+end
+
+local function syncPresetBindingFromOption(optionId, option, fallbackName, fallbackKey, logger)
+    if not option then
+        if logger and logger.debug then
+            logger.debug("Keybind sync [" .. tostring(optionId) .. "]: option missing; fallback binding name='" .. tostring(fallbackName) .. "', key=" .. tostring(fallbackKey) .. ", shift=false, ctrl=true, alt=false")
+        end
         registerBinding(fallbackName, fallbackKey, false, true, false)
         return
     end
 
     local bindingName = option.name or fallbackName
-    local keyCode = tonumber(option.key) or fallbackKey
-    local shift = option.shift == true
-    local alt = option.alt == true
+    local keyCode = fallbackKey
+    local useDefaultModifiers = false
+    local state = getKeybindStateSource(option)
+    local keyToken = state and state.keyCode or option.key
+    local normalizedToken = normalizeBindingToken(keyToken)
+    local numericKey = tonumber(keyToken)
 
-    local ctrl = option.ctrl
-    if ctrl == nil then
-        ctrl = true
+    if numericKey ~= nil then
+        keyCode = math.floor(numericKey)
+        if keyCode <= 0 then
+            keyCode = 0
+        end
     else
-        ctrl = ctrl == true
+        if normalizedToken == nil then
+            keyCode = fallbackKey
+            useDefaultModifiers = true
+        elseif normalizedToken == HOTKEY_NONE_TOKEN then
+            keyCode = 0
+        elseif normalizedToken == "DEFAULT" then
+            keyCode = fallbackKey
+            useDefaultModifiers = true
+        else
+            local resolvedCode = resolveKeyCodeFromToken(normalizedToken)
+            if resolvedCode then
+                keyCode = resolvedCode
+            else
+                keyCode = 0
+                if logger and logger.debug then
+                    logger.debug("ModOptions keybind token unresolved for '" .. tostring(bindingName) .. "': " .. tostring(normalizedToken) .. " (treated as unbound)")
+                end
+            end
+        end
+    end
+
+    local shift = readModifierFlag(option, state, "shift")
+    local alt = readModifierFlag(option, state, "alt")
+    local ctrl = readModifierFlag(option, state, "ctrl")
+
+    if keyCode <= 0 then
+        keyToken = 0
+        ctrl = false
+        shift = false
+        alt = false
+    elseif useDefaultModifiers then
+        ctrl = true
+        shift = false
+        alt = false
+    end
+
+    writeResolvedBindingState(option, keyCode, shift, ctrl, alt)
+
+    if logger and logger.debug then
+        logger.debug(
+            "Keybind sync [" .. tostring(optionId) .. "]"
+            .. ": name='" .. tostring(bindingName) .. "'"
+            .. ", rawKey=" .. tostring(keyToken)
+            .. ", normalized=" .. tostring(normalizedToken)
+            .. ", rawShift=" .. tostring(state and state.shift or option.shift)
+            .. ", rawCtrl=" .. tostring(state and state.ctrl or option.ctrl)
+            .. ", rawAlt=" .. tostring(state and state.alt or option.alt)
+            .. ", resolvedKey=" .. tostring(keyCode)
+            .. ", resolvedShift=" .. tostring(shift)
+            .. ", resolvedCtrl=" .. tostring(ctrl)
+            .. ", resolvedAlt=" .. tostring(alt)
+            .. ", defaultMods=" .. tostring(useDefaultModifiers)
+        )
     end
 
     registerBinding(bindingName, keyCode, shift, ctrl, alt)
 end
 
-local function syncPresetBindings(options)
+local function syncPresetBindings(options, logger)
     if not options or not options.getOption then
         return
     end
 
-    syncPresetBindingFromOption(options:getOption("equipmentPresetHotkey1"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey1"), Keyboard.KEY_F1)
-    syncPresetBindingFromOption(options:getOption("equipmentPresetHotkey2"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey2"), Keyboard.KEY_F2)
-    syncPresetBindingFromOption(options:getOption("equipmentPresetHotkey3"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey3"), Keyboard.KEY_F3)
-    syncPresetBindingFromOption(options:getOption("equipmentPresetHotkey4"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey4"), Keyboard.KEY_F4)
-    syncPresetBindingFromOption(options:getOption("equipmentPresetHotkey5"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey5"), Keyboard.KEY_F5)
-    syncPresetBindingFromOption(options:getOption("equipmentPresetHotkey6"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey6"), Keyboard.KEY_F6)
-    syncPresetBindingFromOption(options:getOption("equipmentPresetHotkey7"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey7"), Keyboard.KEY_F7)
-    syncPresetBindingFromOption(options:getOption("equipmentPresetHotkey8"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey8"), Keyboard.KEY_F8)
+    syncPresetBindingFromOption("equipmentPresetHotkey1", options:getOption("equipmentPresetHotkey1"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey1"), Keyboard.KEY_F1, logger)
+    syncPresetBindingFromOption("equipmentPresetHotkey2", options:getOption("equipmentPresetHotkey2"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey2"), Keyboard.KEY_F2, logger)
+    syncPresetBindingFromOption("equipmentPresetHotkey3", options:getOption("equipmentPresetHotkey3"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey3"), Keyboard.KEY_F3, logger)
+    syncPresetBindingFromOption("equipmentPresetHotkey4", options:getOption("equipmentPresetHotkey4"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey4"), Keyboard.KEY_F4, logger)
+    syncPresetBindingFromOption("equipmentPresetHotkey5", options:getOption("equipmentPresetHotkey5"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey5"), Keyboard.KEY_F5, logger)
+    syncPresetBindingFromOption("equipmentPresetHotkey6", options:getOption("equipmentPresetHotkey6"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey6"), Keyboard.KEY_F6, logger)
+    syncPresetBindingFromOption("equipmentPresetHotkey7", options:getOption("equipmentPresetHotkey7"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey7"), Keyboard.KEY_F7, logger)
+    syncPresetBindingFromOption("equipmentPresetHotkey8", options:getOption("equipmentPresetHotkey8"), getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey8"), Keyboard.KEY_F8, logger)
 end
 
-local function syncLightSwitchToggleBinding(options)
+local function syncLightSwitchToggleBinding(options, logger)
     if not options or not options.getOption then
         return
     end
 
-    syncPresetBindingFromOption(options:getOption("lightSwitchToggleHotkey"), getText("UI_QoLforSacriel_Modules_LightSwitchToggleHotkey"), Keyboard.KEY_F)
+    syncPresetBindingFromOption("lightSwitchToggleHotkey", options:getOption("lightSwitchToggleHotkey"), getText("UI_QoLforSacriel_Modules_LightSwitchToggleHotkey"), Keyboard.KEY_F, logger)
+end
+
+local function syncAllBindings(options, logger)
+    syncPresetBindings(options, logger)
+    syncLightSwitchToggleBinding(options, logger)
+end
+
+local function attachApplySync(options, logger)
+    if not options or options._qolApplySyncAttached == true then
+        return
+    end
+
+    local previousApply = options.apply
+    options.apply = function(self)
+        if previousApply then
+            previousApply(self)
+        end
+        syncAllBindings(self, logger)
+    end
+
+    options._qolApplySyncAttached = true
+end
+
+function CoreModOptions.syncKeybinds(logger)
+    if not PZAPI or not PZAPI.ModOptions or not PZAPI.ModOptions.getOptions then
+        return nil
+    end
+
+    local options = PZAPI.ModOptions:getOptions(MOD_OPTIONS_ID)
+    if not options then
+        return nil
+    end
+
+    attachApplySync(options, logger)
+    syncAllBindings(options, logger)
+    return options
 end
 
 function CoreModOptions.register(logger)
@@ -64,8 +311,8 @@ function CoreModOptions.register(logger)
 
     local options = PZAPI.ModOptions:getOptions(MOD_OPTIONS_ID)
     if options then
-        syncPresetBindings(options)
-        syncLightSwitchToggleBinding(options)
+        attachApplySync(options, logger)
+        syncAllBindings(options, logger)
         return options
     end
 
@@ -74,38 +321,66 @@ function CoreModOptions.register(logger)
     options:addTitle("UI_QoLforSacriel_Modules_Title")
     options:addTickBox("enableMod", "UI_QoLforSacriel_Modules_EnableMod", true, "UI_QoLforSacriel_Modules_EnableMod_Tooltip")
     options:addTickBox("debugLogs", "UI_QoLforSacriel_Modules_DebugLogs", false, "UI_QoLforSacriel_Modules_DebugLogs_Tooltip")
+    options:addTickBox("enableSoundDirection", "UI_QoLforSacriel_Modules_EnableSoundDirection", true, "UI_QoLforSacriel_Modules_EnableSoundDirection_Tooltip")
+    options:addDescription("UI_QoLforSacriel_Modules_SoundDirectionNote")
 
     options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_UIFixesTitle")
     options:addTickBox("enableUIFixes", "UI_QoLforSacriel_Modules_EnableUIFixes", true, "UI_QoLforSacriel_Modules_EnableUIFixes_Tooltip")
     options:addTickBox("enableSkillFilter", "UI_QoLforSacriel_Modules_EnableSkillFilter", true, "UI_QoLforSacriel_Modules_EnableSkillFilter_Tooltip")
     options:addTickBox("skillFilterIncludePartialXP", "UI_QoLforSacriel_Modules_SkillFilterIncludePartialXP", true, "UI_QoLforSacriel_Modules_SkillFilterIncludePartialXP_Tooltip")
-    options:addTickBox("enableWaterDepthHints", "UI_QoLforSacriel_Modules_EnableWaterDepthHints", true, "UI_QoLforSacriel_Modules_EnableWaterDepthHints_Tooltip")
     options:addTickBox("enableHeavyLoadHurtFeedback", "UI_QoLforSacriel_Modules_EnableHeavyLoadHurtFeedback", true, "UI_QoLforSacriel_Modules_EnableHeavyLoadHurtFeedback_Tooltip")
-    options:addTextEntry("waterDepthOverlayRadius", "UI_QoLforSacriel_Modules_WaterDepthOverlayRadius", "3", "UI_QoLforSacriel_Modules_WaterDepthOverlayRadius_Tooltip")
-    options:addTickBox("enableSoundDirection", "UI_QoLforSacriel_Modules_EnableSoundDirection", true, "UI_QoLforSacriel_Modules_EnableSoundDirection_Tooltip")
-    options:addDescription("UI_QoLforSacriel_Modules_SoundDirectionNote")
+    options:addTickBox("enableWaterDepthHints", "UI_QoLforSacriel_Modules_EnableWaterDepthHints", true, "UI_QoLforSacriel_Modules_EnableWaterDepthHints_Tooltip")
+    options:addTickBox("waterDepthShowLitersAboveForaging3", "UI_QoLforSacriel_Modules_WaterDepthShowLitersAboveForaging3", true, "UI_QoLforSacriel_Modules_WaterDepthShowLitersAboveForaging3_Tooltip")
+    
+    local waterDepthOverlayRadiusOption = options:addComboBox("waterDepthOverlayRadius", "UI_QoLforSacriel_Modules_WaterDepthOverlayRadius", "UI_QoLforSacriel_Modules_WaterDepthOverlayRadius_Tooltip")
+    for i = 1, 6 do
+        waterDepthOverlayRadiusOption:addItem("UI_QoLforSacriel_Modules_WaterDepthOverlayRadius_" .. tostring(i), i == 3)
+    end
+
+    local getWaterDepthOverlayRadiusOptionValue = waterDepthOverlayRadiusOption.getValue
+    waterDepthOverlayRadiusOption.getValue = function(self)
+        -- Backwards compatibility: migrate legacy text-entry saves into combo index.
+        local legacyValue = tonumber(self.value)
+        if legacyValue and self.selected == 3 and legacyValue >= 1 and legacyValue <= #self.values then
+            self.selected = legacyValue
+            if self.element ~= nil then
+                self.element.selected = legacyValue
+            end
+            self.value = nil
+        end
+        return getWaterDepthOverlayRadiusOptionValue(self)
+    end
+
+    options:addTextEntry("waterDepthShallowMinWaterCount", "UI_QoLforSacriel_Modules_WaterDepthShallowMinWaterCount", "2", "UI_QoLforSacriel_Modules_WaterDepthShallowMinWaterCount_Tooltip")
+    options:addTextEntry("waterDepthDeepMinWaterCount", "UI_QoLforSacriel_Modules_WaterDepthDeepMinWaterCount", "7", "UI_QoLforSacriel_Modules_WaterDepthDeepMinWaterCount_Tooltip")
 
     options:addSeparator()
-    options:addTitle("UI_QoLforSacriel_Modules_DragDropTitle")
-    options:addTickBox("enableDragDrop", "UI_QoLforSacriel_Modules_EnableDragDrop", true, "UI_QoLforSacriel_Modules_EnableDragDrop_Tooltip")
-    options:addTextEntry("dragDropFatigueStartMultiplier", "UI_QoLforSacriel_Modules_DragDropFatigueStartMultiplier", "0.35", "UI_QoLforSacriel_Modules_DragDropFatigueStartMultiplier_Tooltip")
-    options:addTextEntry("dragDropFatigueMaxMultiplier", "UI_QoLforSacriel_Modules_DragDropFatigueMaxMultiplier", "1.00", "UI_QoLforSacriel_Modules_DragDropFatigueMaxMultiplier_Tooltip")
-    options:addTextEntry("dragDropRampSeconds", "UI_QoLforSacriel_Modules_DragDropRampSeconds", "120", "UI_QoLforSacriel_Modules_DragDropRampSeconds_Tooltip")
-
-    options:addSeparator()
-    options:addTitle("UI_QoLforSacriel_Modules_RestSleepTitle")
-    options:addTickBox("enableRestSleep", "UI_QoLforSacriel_Modules_EnableRestSleep", true, "UI_QoLforSacriel_Modules_EnableRestSleep_Tooltip")
-    options:addTextEntry("restSleepSleepyThreshold", "UI_QoLforSacriel_Modules_RestSleepSleepyThreshold", "0.30", "UI_QoLforSacriel_Modules_RestSleepSleepyThreshold_Tooltip")
-    options:addTickBox("restSleepInterruptOnMoveInput", "UI_QoLforSacriel_Modules_RestSleepInterruptOnMoveInput", true, "UI_QoLforSacriel_Modules_RestSleepInterruptOnMoveInput_Tooltip")
-    options:addTickBox("restSleepInterruptOnPanic", "UI_QoLforSacriel_Modules_RestSleepInterruptOnPanic", true, "UI_QoLforSacriel_Modules_RestSleepInterruptOnPanic_Tooltip")
-    options:addTextEntry("restSleepPanicInterruptLevel", "UI_QoLforSacriel_Modules_RestSleepPanicInterruptLevel", "50", "UI_QoLforSacriel_Modules_RestSleepPanicInterruptLevel_Tooltip")
+    options:addTitle("UI_QoLforSacriel_Modules_InteractionTitle")
 
     options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_EquipmentTitle")
     options:addTickBox("enableEquipment", "UI_QoLforSacriel_Modules_EnableEquipment", true, "UI_QoLforSacriel_Modules_EnableEquipment_Tooltip")
     options:addTickBox("equipmentEnablePresets", "UI_QoLforSacriel_Modules_EquipmentEnablePresets", true, "UI_QoLforSacriel_Modules_EquipmentEnablePresets_Tooltip")
-    options:addTextEntry("equipmentPresetCount", "UI_QoLforSacriel_Modules_EquipmentPresetCount", "2", "UI_QoLforSacriel_Modules_EquipmentPresetCount_Tooltip")
+    local equipmentPresetCountOption = options:addComboBox("equipmentPresetCount", "UI_QoLforSacriel_Modules_EquipmentPresetCount", "UI_QoLforSacriel_Modules_EquipmentPresetCount_Tooltip")
+    for i = 1, 8 do
+        equipmentPresetCountOption:addItem("UI_QoLforSacriel_Modules_EquipmentPresetCount_" .. tostring(i), i == 2)
+    end
+
+    local getPresetCountOptionValue = equipmentPresetCountOption.getValue
+    equipmentPresetCountOption.getValue = function(self)
+        -- Backwards compatibility: migrate legacy text-entry saves into combo index.
+        local legacyValue = tonumber(self.value)
+        if legacyValue and self.selected == 2 and legacyValue >= 1 and legacyValue <= #self.values then
+            self.selected = legacyValue
+            if self.element ~= nil then
+                self.element.selected = legacyValue
+            end
+            self.value = nil
+        end
+        return getPresetCountOptionValue(self)
+    end
+
     options:addTitle("UI_QoLforSacriel_Modules_EquipmentHotkeysTitle")
     options:addDescription("UI_QoLforSacriel_Modules_EquipmentHotkeysNote")
     local presetHotkey1Name = getText("UI_QoLforSacriel_Modules_EquipmentPresetHotkey1")
@@ -176,13 +451,30 @@ function CoreModOptions.register(logger)
     options:addTickBox("lightSwitchToggleRequireSameRoom", "UI_QoLforSacriel_Modules_LightSwitchToggleRequireSameRoom", true, "UI_QoLforSacriel_Modules_LightSwitchToggleRequireSameRoom_Tooltip")
 
     options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_CharacterSystemsTitle")
+    options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_DragDropTitle")
+    options:addTickBox("enableDragDrop", "UI_QoLforSacriel_Modules_EnableDragDrop", true, "UI_QoLforSacriel_Modules_EnableDragDrop_Tooltip")
+    options:addTextEntry("dragDropFatigueStartMultiplier", "UI_QoLforSacriel_Modules_DragDropFatigueStartMultiplier", "0.35", "UI_QoLforSacriel_Modules_DragDropFatigueStartMultiplier_Tooltip")
+    options:addTextEntry("dragDropFatigueMaxMultiplier", "UI_QoLforSacriel_Modules_DragDropFatigueMaxMultiplier", "1.00", "UI_QoLforSacriel_Modules_DragDropFatigueMaxMultiplier_Tooltip")
+    options:addTextEntry("dragDropRampSeconds", "UI_QoLforSacriel_Modules_DragDropRampSeconds", "120", "UI_QoLforSacriel_Modules_DragDropRampSeconds_Tooltip")
+
+    options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_RestSleepTitle")
+    options:addTickBox("enableRestSleep", "UI_QoLforSacriel_Modules_EnableRestSleep", true, "UI_QoLforSacriel_Modules_EnableRestSleep_Tooltip")
+    options:addTextEntry("restSleepSleepyThreshold", "UI_QoLforSacriel_Modules_RestSleepSleepyThreshold", "0.30", "UI_QoLforSacriel_Modules_RestSleepSleepyThreshold_Tooltip")
+    options:addTickBox("restSleepInterruptOnMoveInput", "UI_QoLforSacriel_Modules_RestSleepInterruptOnMoveInput", true, "UI_QoLforSacriel_Modules_RestSleepInterruptOnMoveInput_Tooltip")
+    options:addTickBox("restSleepInterruptOnPanic", "UI_QoLforSacriel_Modules_RestSleepInterruptOnPanic", true, "UI_QoLforSacriel_Modules_RestSleepInterruptOnPanic_Tooltip")
+    options:addTextEntry("restSleepPanicInterruptLevel", "UI_QoLforSacriel_Modules_RestSleepPanicInterruptLevel", "50", "UI_QoLforSacriel_Modules_RestSleepPanicInterruptLevel_Tooltip")
+
+    options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_ArmorMoodTitle")
     options:addTickBox("enableArmorMood", "UI_QoLforSacriel_Modules_EnableArmorMood", true, "UI_QoLforSacriel_Modules_EnableArmorMood_Tooltip")
     options:addTextEntry("armorMoodBaseReductionFactor", "UI_QoLforSacriel_Modules_ArmorMoodBaseReductionFactor", "0.95", "UI_QoLforSacriel_Modules_ArmorMoodBaseReductionFactor_Tooltip")
     options:addTextEntry("armorMoodUpdateCooldownSeconds", "UI_QoLforSacriel_Modules_ArmorMoodUpdateCooldownSeconds", "2", "UI_QoLforSacriel_Modules_ArmorMoodUpdateCooldownSeconds_Tooltip")
 
-    syncPresetBindings(options)
-    syncLightSwitchToggleBinding(options)
+    attachApplySync(options, logger)
+    syncAllBindings(options, logger)
 
     return options
 end

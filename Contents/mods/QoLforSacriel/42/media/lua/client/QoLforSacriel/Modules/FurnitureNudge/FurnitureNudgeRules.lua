@@ -20,6 +20,36 @@ FurnitureNudgeRules.CANDIDATE_REASON_TOO_TIRED = "too_tired"
 local ENDURANCE_EPSILON = 0.0001
 local FLUID_ENDURANCE_PER_LITER = 0.005
 
+local EXPLICIT_NON_BLOCKING_SPRITES = {
+    walls_decoration_01_91 = true,
+    rooftop_furniture_34 = true,
+}
+
+local function normalizeSpriteIdentifier(value)
+    if type(value) ~= "string" or value == "" then
+        return nil
+    end
+    return (value:gsub("^Base%.", ""))
+end
+
+local function getSpriteIdentifier(object, moveProps)
+    if moveProps and moveProps.spriteName and moveProps.spriteName ~= "" then
+        return normalizeSpriteIdentifier(moveProps.spriteName)
+    end
+    if object and object.getSprite then
+        local sprite = object:getSprite()
+        if sprite and sprite.getName then
+            return normalizeSpriteIdentifier(sprite:getName())
+        end
+    end
+    return nil
+end
+
+local function isExplicitNonBlockingSprite(object, moveProps)
+    local spriteId = getSpriteIdentifier(object, moveProps)
+    return spriteId ~= nil and EXPLICIT_NON_BLOCKING_SPRITES[spriteId] == true
+end
+
 local function isRugLike(obj)
     if not obj or not obj.getSprite then
         return false
@@ -59,12 +89,14 @@ local function isDecorativeWallOverlay(obj)
         return true
     end
 
-    -- Decorative wall attachments commonly expose attached side props.
     return props:has("attachedN") or props:has("attachedW") or props:has("attachedS") or props:has("attachedE")
 end
 
 local function isAllowedNonBlocker(obj, settings)
     if not obj then
+        return true
+    end
+    if isExplicitNonBlockingSprite(obj, nil) then
         return true
     end
     if obj.isFloor and obj:isFloor() then

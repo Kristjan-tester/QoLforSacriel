@@ -8,10 +8,10 @@ local function ensureRegistered()
         return
     end
 
-    local ok = pcall(function()
-        modOptions.register(logger)
+    local ok, options = pcall(function()
+        return modOptions.register(logger)
     end)
-    if ok then
+    if ok and options then
         registered = true
     end
 end
