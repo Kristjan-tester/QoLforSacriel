@@ -210,6 +210,93 @@ local function isStrictWeaponItem(item)
     return false
 end
 
+local function isFirearmItem(item)
+    if not item or not isStrictWeaponItem(item) then
+        return false
+    end
+
+    local okRanged, ranged = safeCallItemMethod(item, "isRanged")
+    if okRanged and ranged == true then
+        return true
+    end
+
+    local okMaxAmmo, maxAmmo = safeCallItemMethod(item, "getMaxAmmo")
+    if okMaxAmmo and tonumber(maxAmmo) and tonumber(maxAmmo) > 0 then
+        return true
+    end
+
+    return false
+end
+
+local function getMethodNumberOrNil(item, methodName)
+    local ok, value = safeCallItemMethod(item, methodName)
+    if not ok then
+        return nil
+    end
+
+    return tonumber(value)
+end
+
+local function isExplosiveItem(item)
+    if not item then
+        return false
+    end
+
+    local category = normalizeDisplayCategory(getItemDisplayCategory(item))
+    if category == "explosive" or category == "explosives" then
+        return true
+    end
+
+    local okIsExplosive, explosiveFlag = safeCallItemMethod(item, "isExplosive")
+    if okIsExplosive and explosiveFlag == true then
+        return true
+    end
+
+    local explosiveSignals = {
+        "getExplosionPower",
+        "getExplosionRange",
+        "getExplosionTimer",
+        "getTriggerExplosionTimer",
+        "getSensorRange",
+        "getFireRange",
+        "getSmokeRange",
+    }
+
+    for i = 1, #explosiveSignals do
+        local n = getMethodNumberOrNil(item, explosiveSignals[i])
+        if n and n > 0 then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function buildExplosiveEffectLabel(item)
+    local effects = {}
+
+    local explosionRange = getMethodNumberOrNil(item, "getExplosionRange")
+    if explosionRange and explosionRange > 0 then
+        effects[#effects + 1] = "Explosion"
+    end
+
+    local fireRange = getMethodNumberOrNil(item, "getFireRange")
+    if fireRange and fireRange > 0 then
+        effects[#effects + 1] = "Fire"
+    end
+
+    local smokeRange = getMethodNumberOrNil(item, "getSmokeRange")
+    if smokeRange and smokeRange > 0 then
+        effects[#effects + 1] = "Smoke"
+    end
+
+    if #effects == 0 then
+        return nil
+    end
+
+    return table.concat(effects, ", ")
+end
+
 local function toStatStringOrNA(value, decimals)
     if value == nil then
         return "N/A"
@@ -246,16 +333,20 @@ local function collectEquipmentStats(item, options)
         return {}
     end
 
-    if not isStrictWeaponItem(item) then
+    local isWeapon = isStrictWeaponItem(item)
+    local isExplosive = isExplosiveItem(item)
+
+    if not isWeapon and not isExplosive then
         return {}
     end
 
     local omitIdentityStats = options and options.omitIdentityStats == true
     local forceFullStats = options and options.forceFullStats == true
+    local context = options and options.context or nil
 
     local lines = {}
 
-    if not omitIdentityStats then
+    if not omitIdentityStats and isWeapon then
         local okCondition, conditionValue = safeCallItemMethod(item, "getCondition")
         local okConditionMax, conditionMax = safeCallItemMethod(item, "getConditionMax")
         local conditionText = "N/A"
@@ -277,9 +368,89 @@ local function collectEquipmentStats(item, options)
             damageText = minText .. "-" .. maxText
         end
     end
-    table.insert(lines, "Damage: " .. damageText)
+
+    if isExplosive and damageText == "N/A" then
+        local explosionPower = getMethodNumberOrNil(item, "getExplosionPower")
+        if explosionPower and explosionPower > 0 then
+            damageText = toStatStringOrNA(explosionPower)
+        else
+            local extraDamage = getMethodNumberOrNil(item, "getExtraDamage")
+            if extraDamage and extraDamage > 0 then
+                damageText = toStatStringOrNA(extraDamage, 2)
+            end
+        end
+    end
+
+    if not isExplosive then
+        table.insert(lines, "Damage: " .. damageText)
+    end
 
     if not forceFullStats and not isShowAllEquipmentStatsEnabled() then
+        return lines
+    end
+
+    if isFirearmItem(item) and context ~= "crafting" then
+        lines = {}
+        table.insert(lines, "Damage: " .. damageText)
+        table.insert(lines, "Ammo: " .. getMethodValueOrNA(item, "getCurrentAmmoCount"))
+        table.insert(lines, "Magazine Capacity: " .. getMethodValueOrNA(item, "getMaxAmmo"))
+        table.insert(lines, "Minimum Range: " .. getMethodValueOrNA(item, "getMinRange", 2))
+        table.insert(lines, "Maximum Range: " .. getMethodValueOrNA(item, "getMaxRange", 2))
+        table.insert(lines, "Accuracy: " .. getMethodValueOrNA(item, "getHitChance"))
+        table.insert(lines, "Accuracy bonus (Aiming): " .. getMethodValueOrNA(item, "getAimingPerkHitChanceModifier", 2))
+        table.insert(lines, "Crit Hit Chance: " .. getMethodValueOrNA(item, "getCriticalChance", 2))
+        table.insert(lines, "Crit Hit bonus (Aiming): " .. getMethodValueOrNA(item, "getAimingPerkCritModifier"))
+        table.insert(lines, "Noise Radius: " .. getMethodValueOrNA(item, "getSoundRadius"))
+
+        local firearmKnockbackValue = getMethodValueOrNA(item, "getPushBackMod", 2)
+        if firearmKnockbackValue == "N/A" then
+            firearmKnockbackValue = getMethodValueOrNA(item, "getKnockdownMod", 2)
+        end
+        table.insert(lines, "Knockback: " .. firearmKnockbackValue)
+
+        return lines
+    end
+
+    if isExplosive then
+        table.insert(lines, "Maximum Range: " .. getMethodValueOrNA(item, "getMaxRange", 2))
+        table.insert(lines, "Noise Radius: " .. getMethodValueOrNA(item, "getSoundRadius"))
+
+        local effectLabel = buildExplosiveEffectLabel(item)
+        if effectLabel then
+            table.insert(lines, "Effect: " .. effectLabel)
+        end
+
+        local effectPower = getMethodNumberOrNil(item, "getExplosionPower")
+        if (not effectPower or effectPower <= 0) then
+            effectPower = getMethodNumberOrNil(item, "getExtraDamage")
+        end
+        if effectPower and effectPower > 0 then
+            table.insert(lines, "Effect Power: " .. toStatStringOrNA(effectPower, 2))
+        end
+
+        local effectRange = getMethodNumberOrNil(item, "getExplosionRange")
+        if (not effectRange or effectRange <= 0) then
+            local fireRange = getMethodNumberOrNil(item, "getFireRange")
+            local smokeRange = getMethodNumberOrNil(item, "getSmokeRange")
+            effectRange = math.max(fireRange or 0, smokeRange or 0)
+        end
+        if effectRange and effectRange > 0 then
+            table.insert(lines, "Effect Range: " .. toStatStringOrNA(effectRange, 2))
+        end
+
+        local timerValue = getMethodNumberOrNil(item, "getExplosionTimer")
+        if (not timerValue or timerValue <= 0) then
+            timerValue = getMethodNumberOrNil(item, "getTriggerExplosionTimer")
+        end
+        if timerValue and timerValue > 0 then
+            table.insert(lines, "Timer: " .. toStatStringOrNA(timerValue))
+        end
+
+        local sensorRange = getMethodNumberOrNil(item, "getSensorRange")
+        if sensorRange and sensorRange > 0 then
+            table.insert(lines, "Sensor Range: " .. toStatStringOrNA(sensorRange, 2))
+        end
+
         return lines
     end
 
@@ -288,8 +459,8 @@ local function collectEquipmentStats(item, options)
     table.insert(lines, "Minimum Range: " .. getMethodValueOrNA(item, "getMinRange", 2))
     table.insert(lines, "Maximum Range: " .. getMethodValueOrNA(item, "getMaxRange", 2))
     table.insert(lines, "Attack Speed: " .. getMethodValueOrNA(item, "getBaseSpeed", 2))
-    table.insert(lines, "Critical Hit Chance: " .. getMethodValueOrNA(item, "getCriticalChance", 2))
-    table.insert(lines, "Critical Hit Multiplier: " .. getMethodValueOrNA(item, "getCriticalDamageMultiplier", 2))
+    table.insert(lines, "Crit Hit Chance: " .. getMethodValueOrNA(item, "getCriticalChance", 2))
+    table.insert(lines, "Crit Hit Multiplier: " .. getMethodValueOrNA(item, "getCriticalDamageMultiplier", 2))
 
     local knockbackValue = getMethodValueOrNA(item, "getPushBackMod", 2)
     if knockbackValue == "N/A" then
@@ -629,7 +800,7 @@ local function buildTitleHeaderOutputStatsLine(logic)
         return nil
     end
 
-    local lines = collectEquipmentStats(outputItem, { omitIdentityStats = true, forceFullStats = true })
+    local lines = collectEquipmentStats(outputItem, { omitIdentityStats = true, forceFullStats = true, context = "crafting" })
     if #lines == 0 then
         return nil
     end
@@ -740,7 +911,7 @@ local function applyTooltipAppendFromScriptTable(widget, scriptTable, item, sour
         return false
     end
 
-    local statsText = buildStatsDescription(item, { forceFullStats = true })
+    local statsText = buildStatsDescription(item, { forceFullStats = true, context = "crafting" })
     if not statsText then
         logDebug(sourceTag .. " no equipment stats for current item")
         return false
@@ -917,7 +1088,7 @@ local function appendStatsToObjectTooltip(tooltipUI, item, sourceTag)
         return false
     end
 
-    local lines = collectEquipmentStats(item, { forceFullStats = true })
+    local lines = collectEquipmentStats(item, { forceFullStats = true, context = "crafting" })
     if #lines == 0 then
         logDebug(sourceTag .. " no equipment stats for current item")
         return false
