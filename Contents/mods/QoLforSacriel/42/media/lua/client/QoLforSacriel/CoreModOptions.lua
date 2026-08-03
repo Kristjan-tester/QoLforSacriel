@@ -438,6 +438,8 @@ function CoreModOptions.register(logger)
     options:addTextEntry("furnitureNudgeEnduranceMin", "UI_QoLforSacriel_Modules_FurnitureNudgeEnduranceMin", "0.005", "UI_QoLforSacriel_Modules_FurnitureNudgeEnduranceMin_Tooltip")
     options:addTickBox("furnitureNudgeBlockOnFloorItems", "UI_QoLforSacriel_Modules_FurnitureNudgeBlockOnFloorItems", false, "UI_QoLforSacriel_Modules_FurnitureNudgeBlockOnFloorItems_Tooltip")
     options:addTickBox("furnitureNudgeBlockOnRugs", "UI_QoLforSacriel_Modules_FurnitureNudgeBlockOnRugs", false, "UI_QoLforSacriel_Modules_FurnitureNudgeBlockOnRugs_Tooltip")
+    options:addTickBox("furnitureNudgeAllowMultiTile", "UI_QoLforSacriel_Modules_FurnitureNudgeAllowMultiTile", false, "UI_QoLforSacriel_Modules_FurnitureNudgeAllowMultiTile_Tooltip")
+    options:addTickBox("furnitureNudgeIgnoreToolRequirements", "UI_QoLforSacriel_Modules_FurnitureNudgeIgnoreToolRequirements", false, "UI_QoLforSacriel_Modules_FurnitureNudgeIgnoreToolRequirements_Tooltip")
 
     options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_LightSwitchToggleTitle")

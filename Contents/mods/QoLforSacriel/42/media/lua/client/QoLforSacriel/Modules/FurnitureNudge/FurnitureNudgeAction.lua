@@ -5,6 +5,161 @@ local rules = require "QoLforSacriel/Modules/FurnitureNudge/FurnitureNudgeRules"
 
 FurnitureNudgeAction = ISBaseTimedAction:derive("FurnitureNudgeAction")
 
+local function squareKey(square)
+    if not square then
+        return nil
+    end
+    return tostring(square:getX()) .. ":" .. tostring(square:getY()) .. ":" .. tostring(square:getZ())
+end
+
+local function getMembers(moveProps, sourceSquare)
+    local members = {}
+    if not moveProps or not sourceSquare or not moveProps.isMultiSprite or not moveProps.getSpriteGridInfo then
+        return members
+    end
+
+    local info = moveProps:getSpriteGridInfo(sourceSquare, true)
+    if not info then
+        return members
+    end
+
+    for _, entry in ipairs(info) do
+        table.insert(members, entry)
+    end
+
+    return members
+end
+
+function FurnitureNudgeAction:debugLog(message)
+    if not self.logger or not self.settings or self.settings.get("QoLforSacriel_DebugLogs") ~= true then
+        return
+    end
+    self.logger.debug("FurnitureNudge action: " .. tostring(message))
+end
+
+function FurnitureNudgeAction:verifyMultiTilePlacement(moveProps, targetSquare, members)
+    if #members == 0 or not moveProps or not moveProps.getSpriteGridInfo then
+        return false
+    end
+
+    local expected = {}
+    local expectedCount = 0
+    for _, member in ipairs(members) do
+        local memberSquare = member.square
+        if memberSquare then
+            local shifted = getCell():getGridSquare(memberSquare:getX() + self.direction.dx, memberSquare:getY() + self.direction.dy, memberSquare:getZ())
+            local key = squareKey(shifted)
+            if key and not expected[key] then
+                expected[key] = true
+                expectedCount = expectedCount + 1
+            end
+        end
+    end
+
+    local placedInfo = moveProps:getSpriteGridInfo(targetSquare, true)
+    if not placedInfo then
+        self:debugLog("multi-tile verification failed: no placed grid info")
+        return false
+    end
+
+    local actual = {}
+    for _, entry in ipairs(placedInfo) do
+        if entry.square then
+            actual[squareKey(entry.square)] = true
+        end
+    end
+
+    for key, _ in pairs(expected) do
+        if not actual[key] then
+            self:debugLog("multi-tile verification missing square " .. tostring(key))
+            return false
+        end
+    end
+
+    self:debugLog("multi-tile placement verified; expectedSquares=" .. tostring(expectedCount) .. " actualEntries=" .. tostring(#placedInfo))
+    return true
+end
+
+function FurnitureNudgeAction:placeMultiTileMoveableDirect(moveProps, sourceSquare, targetSquare)
+    if not moveProps or not sourceSquare or not targetSquare then
+        return false
+    end
+
+    local pickedItems = moveProps:pickUpMoveable(self.character, sourceSquare, false, true)
+    if not pickedItems or #pickedItems == 0 then
+        self:debugLog("multi-tile direct place failed: pickUpMoveable returned no items")
+        return false
+    end
+
+    local targetGrid = moveProps:getSpriteGridInfo(targetSquare, false)
+    if not targetGrid or #targetGrid == 0 then
+        self:debugLog("multi-tile direct place failed: no target grid info")
+        return false
+    end
+
+    if #pickedItems ~= #targetGrid then
+        self:debugLog("multi-tile direct place mismatch: pickedItems=" .. tostring(#pickedItems) .. " targetGrid=" .. tostring(#targetGrid))
+        return false
+    end
+
+    for index, gridMember in ipairs(targetGrid) do
+        local item = pickedItems[index]
+        if not item or not gridMember or not gridMember.square or not gridMember.sprite then
+            self:debugLog("multi-tile direct place failed: missing item or grid member at index=" .. tostring(index))
+            return false
+        end
+        moveProps:placeMoveableInternal(gridMember.square, item, gridMember.sprite:getName())
+    end
+
+    if ISMoveableCursor and ISMoveableCursor.clearCacheForAllPlayers then
+        ISMoveableCursor.clearCacheForAllPlayers()
+    end
+
+    self:debugLog("multi-tile direct place complete: items=" .. tostring(#pickedItems))
+    return true
+end
+
+function FurnitureNudgeAction:runWithNudgePlaceBypass(moveProps, shouldBypass, fn)
+    if not shouldBypass or not moveProps then
+        return fn()
+    end
+
+    local originalHasRequiredSkill = moveProps.hasRequiredSkill
+    local originalHasTool = moveProps.hasTool
+
+    moveProps.hasRequiredSkill = function(_, character, mode)
+        if mode == "place" then
+            return true
+        end
+        if originalHasRequiredSkill then
+            return originalHasRequiredSkill(moveProps, character, mode)
+        end
+        return true
+    end
+
+    moveProps.hasTool = function(_, character, mode)
+        if mode == "place" then
+            return true
+        end
+        if originalHasTool then
+            return originalHasTool(moveProps, character, mode)
+        end
+        return true
+    end
+
+    local ok, result = pcall(fn)
+
+    moveProps.hasRequiredSkill = originalHasRequiredSkill
+    moveProps.hasTool = originalHasTool
+
+    if not ok then
+        self:debugLog("place bypass wrapper error: " .. tostring(result))
+        return false
+    end
+
+    return result
+end
+
 function FurnitureNudgeAction:isValid()
     if not self.character or self.character:isDead() then
         return false
@@ -19,10 +174,18 @@ function FurnitureNudgeAction:isValid()
         square = self.object:getSquare(),
     }
 
-    if not candidate.moveProps or candidate.moveProps.isMultiSprite then
+    if not candidate.moveProps then
         return false
     end
-    if rules.requiresTool(candidate.moveProps) then
+
+    local allowMultiTile = rules.isMultiTileAllowed(self.settings)
+    local ignoreTools = rules.shouldIgnoreToolRequirementForCandidate(candidate, self.settings)
+
+    if candidate.moveProps.isMultiSprite and not allowMultiTile then
+        return false
+    end
+
+    if rules.requiresTool(candidate.moveProps) and not ignoreTools then
         return false
     end
     if not self.object:isObjectNoContainerOrEmpty() then
@@ -106,19 +269,65 @@ function FurnitureNudgeAction:executeMove()
         moveProps = moveProps,
         square = sourceSquare,
     }
+
+    local allowMultiTile = rules.isMultiTileAllowed(self.settings)
+    local ignoreTools = rules.shouldIgnoreToolRequirementForCandidate(candidate, self.settings)
+    if moveProps.isMultiSprite and not allowMultiTile then
+        self:debugLog("execute blocked: multi-tile disabled")
+        return false
+    end
+    if rules.requiresTool(moveProps) and not ignoreTools then
+        self:debugLog("execute blocked: tool requirement still active")
+        return false
+    end
+
     if not rules.canMoveDirection(self.character, candidate, self.direction, self.settings) then
+        self:debugLog("execute blocked: canMoveDirection=false")
         return false
     end
 
-    local picked = moveProps:pickUpMoveable(self.character, sourceSquare, true, true)
-    if not picked then
+    local members = getMembers(moveProps, sourceSquare)
+    self:debugLog("execute begin: multiTile=" .. tostring(moveProps.isMultiSprite == true) .. " members=" .. tostring(#members) .. " ignoreTools=" .. tostring(ignoreTools))
+    local placedOk
+    if moveProps.isMultiSprite then
+        self:debugLog("placing multi-tile moveable via direct path")
+        local multiPlaced = self:runWithNudgePlaceBypass(moveProps, ignoreTools, function()
+            return self:placeMultiTileMoveableDirect(moveProps, sourceSquare, targetSquare)
+        end)
+        if not multiPlaced then
+            self:debugLog("multi-tile direct place invocation failed")
+            return false
+        end
+        placedOk = self:verifyMultiTilePlacement(moveProps, targetSquare, members)
+    else
+        local picked = moveProps:pickUpMoveable(self.character, sourceSquare, true, true)
+        if not picked then
+            self:debugLog("pickUpMoveable returned false")
+            return false
+        end
+
+        local forceAllowPlace = ignoreTools
+        self:debugLog("placing single-tile moveable with forceAllow=" .. tostring(forceAllowPlace))
+        local placeInvocationOk = self:runWithNudgePlaceBypass(moveProps, ignoreTools, function()
+            moveProps:placeMoveable(self.character, targetSquare, moveProps.spriteName, forceAllowPlace)
+            return true
+        end)
+        if not placeInvocationOk then
+            self:debugLog("placeMoveable invocation failed")
+            return false
+        end
+
+        local placed = moveProps:findOnSquare(targetSquare, moveProps.spriteName)
+        placedOk = placed ~= nil
+        self:debugLog("single-tile placement check: " .. tostring(placedOk))
+    end
+
+    if not placedOk then
+        self:debugLog("placement verification failed")
         return false
     end
 
-    moveProps:placeMoveable(self.character, targetSquare, moveProps.spriteName, false)
-
-    local placed = moveProps:findOnSquare(targetSquare, moveProps.spriteName)
-    return placed ~= nil
+    return true
 end
 
 function FurnitureNudgeAction:applyEnduranceCost()
