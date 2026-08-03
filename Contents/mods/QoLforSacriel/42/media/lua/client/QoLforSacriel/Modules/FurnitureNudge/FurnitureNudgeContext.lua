@@ -72,6 +72,14 @@ local function logDisableReason(settings, logger, reason, candidate)
         return
     end
 
+    local itemName = candidate and candidate.displayName or nil
+    if (not itemName or itemName == "") and candidate and candidate.moveProps and candidate.moveProps.name then
+        itemName = candidate.moveProps.name
+    end
+    if not itemName or itemName == "" then
+        itemName = "unknown"
+    end
+
     local details = ""
     if candidate and candidate.object and candidate.object.getSquare then
         local square = candidate.object:getSquare()
@@ -80,7 +88,7 @@ local function logDisableReason(settings, logger, reason, candidate)
         end
     end
 
-    logger.debug("FurnitureNudge disabled: " .. tostring(reason) .. details)
+    logger.debug("FurnitureNudge disabled: " .. tostring(reason) .. " item=" .. tostring(itemName) .. details)
 end
 
 local function addDisabledNamedOption(context, label, tooltipKey, tooltipFallback)
@@ -150,9 +158,13 @@ local function installMenuHook(settings, logger)
             return
         end
 
-        local candidates = rules.resolveCandidates(worldobjects)
+        local candidates = rules.resolveCandidates(worldobjects, settings, logger)
         if #candidates == 0 then
             return
+        end
+
+        if logger and settings.get("QoLforSacriel_DebugLogs") == true then
+            logger.debug("FurnitureNudge context candidates: " .. tostring(#candidates))
         end
 
         if #candidates == 1 then
