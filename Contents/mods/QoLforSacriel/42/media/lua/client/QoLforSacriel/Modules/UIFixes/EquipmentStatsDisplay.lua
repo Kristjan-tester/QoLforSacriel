@@ -1261,6 +1261,9 @@ local function patchInventoryTooltipRenderFallback()
 
         local originalSetHeight = ISToolTipInv.setHeight
         local originalDrawRectBorder = ISToolTipInv.drawRectBorder
+        if type(originalSetHeight) ~= "function" or type(originalDrawRectBorder) ~= "function" then
+            return originalToolTipInvRender(self)
+        end
 
         self.setHeight = function(instance, _, ...)
             instance.keepOnScreen = false
@@ -1268,6 +1271,10 @@ local function patchInventoryTooltipRenderFallback()
         end
 
         self.drawRectBorder = function(instance, ...)
+            if not instance or not instance.tooltip or type(instance.tooltip.DrawText) ~= "function" then
+                return originalDrawRectBorder(instance, ...)
+            end
+
             local y = baseHeight
             local padLeft = 5
             for _, line in ipairs(lines) do

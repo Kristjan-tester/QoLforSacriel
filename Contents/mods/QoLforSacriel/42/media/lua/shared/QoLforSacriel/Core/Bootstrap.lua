@@ -26,6 +26,7 @@ local function registerModules()
     local waterDepthHints = safeRequire("QoLforSacriel/Modules/UIFixes/WaterDepthHints")
     local heavyLoadHurtFeedback = safeRequire("QoLforSacriel/Modules/UIFixes/HeavyLoadHurtFeedback")
     local equipmentStatsDisplay = safeRequire("QoLforSacriel/Modules/UIFixes/EquipmentStatsDisplay")
+    local craftToolSubmenu = safeRequire("QoLforSacriel/Modules/UIFixes/CraftToolSubmenu")
     local soundDirection = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundDirection")
     local furnitureNudge = safeRequire("QoLforSacriel/Modules/FurnitureNudge/FurnitureNudge")
     local lightSwitchToggle = safeRequire("QoLforSacriel/Modules/LightSwitchToggle/LightSwitchToggle")
@@ -45,6 +46,9 @@ local function registerModules()
     end
     if equipmentStatsDisplay and equipmentStatsDisplay.init then
         registry.register("UIFixes.EquipmentStatsDisplay", "QoLforSacriel_EnableUIFixes", equipmentStatsDisplay.init)
+    end
+    if craftToolSubmenu and craftToolSubmenu.init then
+        registry.register("UIFixes.CraftToolSubmenu", "QoLforSacriel_EnableUIFixes", craftToolSubmenu.init)
     end
     if soundDirection and soundDirection.init then
         registry.register("UIFixes.SoundDirection", "QoLforSacriel_EnableUIFixes", soundDirection.init)
