@@ -2,7 +2,7 @@ local LightSwitchToggle = {}
 
 local installed = false
 local DEFAULT_RANGE = 1
-local MAX_RANGE = 5
+local MAX_RANGE = 3
 local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
 local HOTKEY_OPTION_ID = "lightSwitchToggleHotkey"
 
@@ -135,7 +135,8 @@ end
 local function scoreSwitch(playerSquare, targetSquare)
     local dx = math.abs(targetSquare:getX() - playerSquare:getX())
     local dy = math.abs(targetSquare:getY() - playerSquare:getY())
-    return dx + dy, targetSquare:getX(), targetSquare:getY()
+    -- Chebyshev distance keeps diagonals in-range (range=1 includes 8 neighboring tiles).
+    return math.max(dx, dy), targetSquare:getX(), targetSquare:getY()
 end
 
 local function chooseBetterCandidate(current, candidate)

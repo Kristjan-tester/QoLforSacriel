@@ -332,6 +332,7 @@ function CoreModOptions.register(logger)
     options:addTickBox("enableHeavyLoadHurtFeedback", "UI_QoLforSacriel_Modules_EnableHeavyLoadHurtFeedback", true, "UI_QoLforSacriel_Modules_EnableHeavyLoadHurtFeedback_Tooltip")
     options:addTickBox("enableExactEquipmentStats", "UI_QoLforSacriel_Modules_EnableExactEquipmentStats", true, "UI_QoLforSacriel_Modules_EnableExactEquipmentStats_Tooltip")
     options:addTickBox("enableCraftOutputItemTooltip", "UI_QoLforSacriel_Modules_EnableCraftOutputItemTooltip", true, "UI_QoLforSacriel_Modules_EnableCraftOutputItemTooltip_Tooltip")
+    options:addTickBox("enableCraftToolSubmenu", "UI_QoLforSacriel_Modules_EnableCraftToolSubmenu", true, "UI_QoLforSacriel_Modules_EnableCraftToolSubmenu_Tooltip")
     options:addTickBox("showAllEquipmentTooltipStats", "UI_QoLforSacriel_Modules_ShowAllEquipmentTooltipStats", true, "UI_QoLforSacriel_Modules_ShowAllEquipmentTooltipStats_Tooltip")
     options:addTickBox("enableWaterDepthHints", "UI_QoLforSacriel_Modules_EnableWaterDepthHints", true, "UI_QoLforSacriel_Modules_EnableWaterDepthHints_Tooltip")
     options:addTickBox("waterDepthShowLitersAboveForaging3", "UI_QoLforSacriel_Modules_WaterDepthShowLitersAboveForaging3", true, "UI_QoLforSacriel_Modules_WaterDepthShowLitersAboveForaging3_Tooltip")
@@ -452,7 +453,25 @@ function CoreModOptions.register(logger)
     lightSwitchToggleHotkey.ctrl = true
     lightSwitchToggleHotkey.shift = false
     lightSwitchToggleHotkey.alt = false
-    options:addTextEntry("lightSwitchToggleRange", "UI_QoLforSacriel_Modules_LightSwitchToggleRange", "1", "UI_QoLforSacriel_Modules_LightSwitchToggleRange_Tooltip")
+    local lightSwitchToggleRangeOption = options:addComboBox("lightSwitchToggleRange", "UI_QoLforSacriel_Modules_LightSwitchToggleRange", "UI_QoLforSacriel_Modules_LightSwitchToggleRange_Tooltip")
+    for i = 1, 3 do
+        lightSwitchToggleRangeOption:addItem("UI_QoLforSacriel_Modules_LightSwitchToggleRange_" .. tostring(i), i == 1)
+    end
+
+    local getLightSwitchToggleRangeOptionValue = lightSwitchToggleRangeOption.getValue
+    lightSwitchToggleRangeOption.getValue = function(self)
+        -- Backwards compatibility: migrate legacy text-entry saves into combo index.
+        local legacyValue = tonumber(self.value)
+        if legacyValue and self.selected == 1 and legacyValue >= 1 and legacyValue <= #self.values then
+            self.selected = legacyValue
+            if self.element ~= nil then
+                self.element.selected = legacyValue
+            end
+            self.value = nil
+        end
+        return getLightSwitchToggleRangeOptionValue(self)
+    end
+
     options:addTickBox("lightSwitchToggleRequireSameRoom", "UI_QoLforSacriel_Modules_LightSwitchToggleRequireSameRoom", true, "UI_QoLforSacriel_Modules_LightSwitchToggleRequireSameRoom_Tooltip")
 
     options:addSeparator()
