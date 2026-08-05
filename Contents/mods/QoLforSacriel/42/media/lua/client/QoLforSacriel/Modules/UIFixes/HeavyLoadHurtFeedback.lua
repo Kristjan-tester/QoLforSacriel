@@ -3,8 +3,7 @@ local HeavyLoadHurtFeedback = {}
 local installed = false
 local lastTriggerAtHours = -1
 local COOLDOWN_SECONDS = 2.0
-local FIXED_VARIANT = "glasscut"
-local FIXED_ROUTE = "voice"
+local PAIN_VOICE_SUFFIX = "PainFromGlassCut"
 
 local function getLogger()
     return _G.QoLforSacriel_Logger
@@ -66,127 +65,24 @@ local function isCoolingDown(nowHours)
     return elapsedSeconds < COOLDOWN_SECONDS
 end
 
-local SOUND_SUFFIX_BY_VARIANT = {
-    moodle = "PainMoodle",
-    scratch = "PainFromScratch",
-    lacerate = "PainFromLacerate",
-    glasscut = "PainFromGlassCut",
-}
-
-local function normalizeVariant(value)
-    local key = tostring(value or ""):lower():gsub("[^a-z]", "")
-    if SOUND_SUFFIX_BY_VARIANT[key] then
-        return key
-    end
-    return "scratch"
-end
-
-local function normalizeFunctionRoute(value)
-    local key = tostring(value or ""):lower():gsub("[^a-z]", "")
-    if key == "voice" or key == "transmit" or key == "localvoice" or key == "worldsound" then
-        return key
-    end
-    return "voice"
-end
-
-local function getVoicePrefix(playerObj)
-    if not playerObj or not playerObj.getDescriptor then
-        return nil
-    end
-
-    local okDescriptor, descriptor = pcall(function()
-        return playerObj:getDescriptor()
-    end)
-    if not okDescriptor or not descriptor or not descriptor.getVoicePrefix then
-        return nil
-    end
-
-    local okPrefix, prefix = pcall(function()
-        return descriptor:getVoicePrefix()
-    end)
-    if not okPrefix then
-        return nil
-    end
-    return prefix
-end
-
-local function didPlaySound(result)
-    return type(result) == "number" and result > 0
-end
-
-local function tryVoiceRoute(playerObj, route, suffix)
-    if not playerObj then
-        return false
-    end
-
-    if route == "voice" and playerObj.playerVoiceSound then
-        local ok, result = pcall(function()
-            return playerObj:playerVoiceSound(suffix)
-        end)
-        return ok and didPlaySound(result)
-    end
-
-    if route == "transmit" and playerObj.transmitPlayerVoiceSound then
-        local ok, result = pcall(function()
-            return playerObj:transmitPlayerVoiceSound(suffix)
-        end)
-        return ok and didPlaySound(result)
-    end
-
-    if route == "localvoice" and playerObj.playSoundLocal then
-        local voicePrefix = getVoicePrefix(playerObj)
-        if not voicePrefix then
-            return false
-        end
-        local ok, result = pcall(function()
-            return playerObj:playSoundLocal(voicePrefix .. suffix)
-        end)
-        return ok and didPlaySound(result)
-    end
-
-    if route == "worldsound" and playerObj.playSound then
-        local voicePrefix = getVoicePrefix(playerObj)
-        if not voicePrefix then
-            return false
-        end
-        local ok, result = pcall(function()
-            return playerObj:playSound(voicePrefix .. suffix)
-        end)
-        return ok and didPlaySound(result)
-    end
-
-    return false
-end
-
 local function playPainFeedback(playerObj, settings)
-    local variant = normalizeVariant(FIXED_VARIANT)
-    local route = normalizeFunctionRoute(FIXED_ROUTE)
-    local suffix = SOUND_SUFFIX_BY_VARIANT[variant]
-
-    if tryVoiceRoute(playerObj, route, suffix) then
-        debugLog(settings, "audio route success: route=" .. tostring(route) .. " variant=" .. tostring(variant) .. " suffix=" .. tostring(suffix))
-        return true
+    if not playerObj or not playerObj.playerVoiceSound then
+        return "unavailable"
     end
 
-    -- If the selected route fails on this runtime, fall back to primary voice route.
-    if route ~= "voice" and tryVoiceRoute(playerObj, "voice", suffix) then
-        debugLog(settings, "audio route fallback success: selected=" .. tostring(route) .. " fallback=voice variant=" .. tostring(variant) .. " suffix=" .. tostring(suffix))
-        return true
+    local ok, result = pcall(function()
+        return playerObj:playerVoiceSound(PAIN_VOICE_SUFFIX)
+    end)
+    if not ok then
+        return "unavailable"
+    end
+    if type(result) == "number" and result > 0 then
+        debugLog(settings, "audio voice started: suffix=" .. PAIN_VOICE_SUFFIX)
+        return "started"
     end
 
-    -- Last fallback keeps original behavior for resilience.
-    if playerObj and playerObj.playerVoiceSound then
-        local ok, result = pcall(function()
-            return playerObj:playerVoiceSound("PainMoodle")
-        end)
-        if ok and didPlaySound(result) then
-            debugLog(settings, "audio route final fallback success: route=voice variant=moodle suffix=PainMoodle")
-            return true
-        end
-    end
-
-
-    return false
+    -- Vanilla returns zero when this exact voice event is already playing.
+    return "already-playing"
 end
 
 local function onPlayerGetDamage(playerObj, damageType, damageAmount)
@@ -226,11 +122,14 @@ local function onPlayerGetDamage(playerObj, damageType, damageAmount)
         return
     end
 
-    if playPainFeedback(playerObj, settings) then
+    local playbackResult = playPainFeedback(playerObj, settings)
+    if playbackResult == "started" then
         lastTriggerAtHours = nowHours or -1
         debugLog(settings, "triggered: heavy-load hurt feedback")
+    elseif playbackResult == "already-playing" then
+        debugLog(settings, "suppressed: pain voice already playing")
     else
-        debugLog(settings, "suppressed: no playable pain sound route")
+        debugLog(settings, "suppressed: pain voice API unavailable")
     end
 end
 
