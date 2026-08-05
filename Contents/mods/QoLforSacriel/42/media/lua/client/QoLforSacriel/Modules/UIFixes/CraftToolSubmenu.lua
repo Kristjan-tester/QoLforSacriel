@@ -218,6 +218,34 @@ local function getItemDisplayName(item)
     return tostring(item)
 end
 
+local function getRecipeNameKey(recipe)
+    local okName, recipeName = safeCallMethod(recipe, "getName")
+    if okName and recipeName and recipeName ~= "" then
+        return tostring(recipeName)
+    end
+    return nil
+end
+
+local function isUnstackFourLogsRecipe(recipe)
+    return getRecipeNameKey(recipe) == "UnstackFourLogs"
+end
+
+local function hasLogStackRopeItemsMetadata(item)
+    local okModData, modData = safeCallMethod(item, "getModData")
+    if not okModData or not modData then
+        return false
+    end
+
+    local okRopeItems, ropeItems = pcall(function()
+        return modData["ropeItems"]
+    end)
+    return okRopeItems and ropeItems ~= nil
+end
+
+local function shouldBlockUnsafeUnstack(recipe, selectedItem)
+    return isUnstackFourLogsRecipe(recipe) and not hasLogStackRopeItemsMetadata(selectedItem)
+end
+
 local function getItemFullType(item)
     if not item then
         return nil
@@ -839,6 +867,37 @@ local function flushDeferredReturnItems(state)
     state.deferredReturnItems = {}
 end
 
+local function buildSelectedInputLockSelection(recipe, selectedItem, playerObj, containers)
+    local lockedSelection = {}
+    if not recipe or not selectedItem or not playerObj or not containers then
+        return lockedSelection
+    end
+
+    local logic = createRecipeLogic(playerObj, containers, recipe, selectedItem)
+    local recipeData = logic and logic:getRecipeData() or nil
+    if not recipeData then
+        return lockedSelection
+    end
+
+    local candidateInputScripts = getCandidateInputScripts(recipe)
+    if #candidateInputScripts == 0 then
+        return lockedSelection
+    end
+
+    local allItems = getAllItemsFromContainers(containers)
+    for i = 1, #candidateInputScripts do
+        local inputScript = candidateInputScripts[i]
+        if inputScript and not isToolInputScript(inputScript) then
+            local candidates = collectToolCandidatesForScript(recipeData, recipe, inputScript, allItems, playerObj)
+            if #candidates > 1 and hasSelectedItemCandidate(candidates, selectedItem) then
+                lockedSelection[#lockedSelection + 1] = { inputScript = inputScript, item = selectedItem }
+            end
+        end
+    end
+
+    return lockedSelection
+end
+
 local function performSingleCraftWithToolSelection(selectedItem, recipe, player, eatPercentage, toolSelection, onCompleteFunc, onCompleteTarget, allState)
     local playerObj = getSpecificPlayer(player)
     local containers = ISInventoryPaneContextMenu.getContainers(playerObj)
@@ -1039,6 +1098,26 @@ local function onCraftWithToolSelection(selectedItem, recipe, player, all, eatPe
     performSingleCraftWithToolSelection(selectedItem, recipe, player, eatPercentage, toolSelection)
 end
 
+local function onCraftWithSafeUnstack(selectedItem, recipe, player, all, eatPercentage)
+    if shouldBlockUnsafeUnstack(recipe, selectedItem) then
+        logDebug("recipe 'UnstackFourLogs' blocked: selected stack has no ropeItems metadata")
+        return
+    end
+
+    ISInventoryPaneContextMenu.OnNewCraft(selectedItem, recipe, player, all, eatPercentage)
+end
+
+local function markUnstackOptionUnavailable(option)
+    if not option then
+        return
+    end
+
+    option.notAvailable = true
+    local tooltip = ISInventoryPaneContextMenu.addToolTip()
+    tooltip.description = "This log stack cannot be safely unstacked because its rope data is missing."
+    option.toolTip = tooltip
+end
+
 local function shouldUseSubmenuForRecipe(recipe, selectedItem, playerObj, containers)
     local recipeName = "<unknown>"
     local okRecipeName, resolvedRecipeName = safeCallMethod(recipe, "getTranslationName")
@@ -1206,9 +1285,19 @@ local function patchInventoryPaneContextMenu()
                     end
                 end
             else
-                local option = context:addOption(recipeName, selectedItem, ISInventoryPaneContextMenu.OnNewCraft, recipe, player, false)
+                local callback = ISInventoryPaneContextMenu.OnNewCraft
+                if isUnstackFourLogsRecipe(recipe) then
+                    callback = onCraftWithSafeUnstack
+                end
+
+                local option = context:addOption(recipeName, selectedItem, callback, recipe, player, false, nil, rootContext)
                 decorateOption(option, recipeTexture, selectedItem)
                 attachRecipeTooltip(option, playerObj, recipe, logic, recipeTexture)
+
+                if shouldBlockUnsafeUnstack(recipe, selectedItem) then
+                    logDebug("recipe '" .. tostring(recipeName) .. "' shown-disabled: selected stack has no ropeItems metadata")
+                    markUnstackOptionUnavailable(option)
+                end
             end
         end
     end

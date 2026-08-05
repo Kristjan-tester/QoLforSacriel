@@ -27,6 +27,8 @@ local function registerModules()
     local heavyLoadHurtFeedback = safeRequire("QoLforSacriel/Modules/UIFixes/HeavyLoadHurtFeedback")
     local equipmentStatsDisplay = safeRequire("QoLforSacriel/Modules/UIFixes/EquipmentStatsDisplay")
     local craftToolSubmenu = safeRequire("QoLforSacriel/Modules/UIFixes/CraftToolSubmenu")
+    local inventoryUpdate = safeRequire("QoLforSacriel/Modules/UIFixes/InventoryUpdate")
+    local heavyCraftDrop = safeRequire("QoLforSacriel/Modules/UIFixes/HeavyCraftDrop")
     local soundDirection = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundDirection")
     local furnitureNudge = safeRequire("QoLforSacriel/Modules/FurnitureNudge/FurnitureNudge")
     local lightSwitchToggle = safeRequire("QoLforSacriel/Modules/LightSwitchToggle/LightSwitchToggle")
@@ -49,6 +51,12 @@ local function registerModules()
     end
     if craftToolSubmenu and craftToolSubmenu.init then
         registry.register("UIFixes.CraftToolSubmenu", "QoLforSacriel_EnableUIFixes", craftToolSubmenu.init)
+    end
+    if inventoryUpdate and inventoryUpdate.init then
+        registry.register("UIFixes.InventoryUpdate", "QoLforSacriel_EnableUIFixes", inventoryUpdate.init)
+    end
+    if heavyCraftDrop and heavyCraftDrop.init then
+        registry.register("UIFixes.HeavyCraftDrop", "QoLforSacriel_EnableUIFixes", heavyCraftDrop.init)
     end
     if soundDirection and soundDirection.init then
         registry.register("UIFixes.SoundDirection", "QoLforSacriel_EnableUIFixes", soundDirection.init)

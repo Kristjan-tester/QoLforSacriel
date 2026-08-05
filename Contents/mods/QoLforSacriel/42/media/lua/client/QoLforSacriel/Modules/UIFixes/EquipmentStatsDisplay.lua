@@ -18,9 +18,13 @@ local originalWidgetInputUpdateScriptValues = nil
 local originalWidgetOutputUpdateValues = nil
 local originalWidgetInputUpdateValues = nil
 local originalCraftLogicInputControlCreateDynamicChildren = nil
+local originalCraftLogicInputControlCalculateLayout = nil
 local originalToolTipItemSlotRender = nil
 local originalToolTipInvRender = nil
 local originalWidgetTitleHeaderUpdateLabels = nil
+local originalWidgetTitleHeaderRender = nil
+local originalWidgetTitleHeaderCalculateLayout = nil
+local originalWidgetCraftLogicTitleCreateChildren = nil
 
 local function logDebug(message)
     if not loggerRef or not loggerRef.debug then
@@ -53,6 +57,13 @@ local function isCraftOutputTooltipEnabled()
         return false
     end
     return settingsRef.get("QoLforSacriel_UIFixes_EnableCraftOutputItemTooltip") == true
+end
+
+local function isCraftRecipeXpEnabled()
+    if not isUiFixesEnabled() then
+        return false
+    end
+    return settingsRef.get("QoLforSacriel_UIFixes_EnableCraftRecipeXp") == true
 end
 
 local function isShowAllEquipmentStatsEnabled()
@@ -389,7 +400,7 @@ local function collectEquipmentStats(item, options)
         return lines
     end
 
-    if isFirearmItem(item) and context ~= "crafting" then
+    if isFirearmItem(item) then
         lines = {}
         table.insert(lines, "Damage: " .. damageText)
         table.insert(lines, "Ammo: " .. getMethodValueOrNA(item, "getCurrentAmmoCount"))
@@ -815,6 +826,244 @@ local function buildTitleHeaderOutputStatsLine(logic)
     return table.concat(compactLines, "\n")
 end
 
+local function getSandboxXpMultiplier(perk)
+    if not SandboxOptions or not SandboxOptions.instance or not perk or not perk.getType then
+        return 1
+    end
+
+    local okMultiplier, multiplier = pcall(function()
+        local config = SandboxOptions.instance.multipliersConfig
+        if config and config.xpMultiplierGlobalToggle and config.xpMultiplierGlobalToggle:getValue() then
+            return config.xpMultiplierGlobal:getValue()
+        end
+
+        local optionName = "MultiplierConfig." .. tostring(perk:getType())
+        local option = SandboxOptions.instance:getOptionByName(optionName)
+        return option:asConfigOption():getValueAsString()
+    end)
+
+    return okMultiplier and tonumber(multiplier) or 1
+end
+
+local function getCraftRecipeXpMultiplier(playerObj, perk)
+    if not playerObj or not perk or not perk.getType then
+        return 1
+    end
+
+    local perkType = perk:getType()
+    local isSprinting = PerkFactory and PerkFactory.Perks and perkType == PerkFactory.Perks.Sprinting
+    local isFitness = PerkFactory and PerkFactory.Perks and perkType == PerkFactory.Perks.Fitness
+    local isStrength = PerkFactory and PerkFactory.Perks and perkType == PerkFactory.Perks.Strength
+    local excludesSpeedReduction = isSprinting or isFitness or isStrength
+    local excludesSpeedIncrease = isFitness or isStrength
+    local multiplier = excludesSpeedReduction and 1 or 0.25
+    local playerXp = playerObj.getXp and playerObj:getXp() or nil
+    if playerXp and playerXp.getPerkBoost then
+        local okBoost, boost = pcall(function()
+            return playerXp:getPerkBoost(perkType)
+        end)
+        if okBoost and tonumber(boost) then
+            if tonumber(boost) == 1 and isSprinting then
+                multiplier = 1.25
+            elseif tonumber(boost) == 1 then
+                multiplier = 1
+            elseif tonumber(boost) == 2 and not excludesSpeedIncrease then
+                multiplier = 1.33
+            elseif tonumber(boost) >= 3 and not excludesSpeedIncrease then
+                multiplier = 1.66
+            end
+        end
+    end
+
+    if CharacterTrait and playerObj.hasTrait then
+        if CharacterTrait.FAST_LEARNER and not excludesSpeedIncrease and playerObj:hasTrait(CharacterTrait.FAST_LEARNER) then
+            multiplier = multiplier * 1.3
+        end
+        if CharacterTrait.SLOW_LEARNER and not excludesSpeedReduction and playerObj:hasTrait(CharacterTrait.SLOW_LEARNER) then
+            multiplier = multiplier * 0.7
+        end
+        if CharacterTrait.PACIFIST
+            and playerObj:hasTrait(CharacterTrait.PACIFIST)
+            and PerkFactory
+            and PerkFactory.Perks
+            and (
+                perkType == PerkFactory.Perks.SmallBlade
+                or perkType == PerkFactory.Perks.LongBlade
+                or perkType == PerkFactory.Perks.SmallBlunt
+                or perkType == PerkFactory.Perks.Spear
+                or perkType == PerkFactory.Perks.Blunt
+                or perkType == PerkFactory.Perks.Axe
+                or perkType == PerkFactory.Perks.Aiming
+            )
+        then
+            multiplier = multiplier * 0.75
+        end
+        if CharacterTrait.CRAFTY
+            and playerObj:hasTrait(CharacterTrait.CRAFTY)
+            and PerkFactory
+            and PerkFactory.Perks
+            and perk.getParent
+            and perk:getParent() == PerkFactory.Perks.Crafting
+        then
+            multiplier = multiplier * 1.3
+        end
+    end
+
+    if playerXp and playerXp.getMultiplier then
+        local okTemporary, temporaryMultiplier = pcall(function()
+            return playerXp:getMultiplier(perkType)
+        end)
+        if okTemporary and tonumber(temporaryMultiplier) and tonumber(temporaryMultiplier) > 1 then
+            multiplier = multiplier * tonumber(temporaryMultiplier)
+        end
+    end
+
+    return multiplier * getSandboxXpMultiplier(perk)
+end
+
+local function getCraftRecipeAwardAmount(playerObj, perk, baseAmount)
+    local awardedAmount = baseAmount
+    local perkType = perk and perk.getType and perk:getType() or nil
+    local nutrition = playerObj and playerObj.getNutrition and playerObj:getNutrition() or nil
+    if PerkFactory and PerkFactory.Perks and perkType == PerkFactory.Perks.Fitness and nutrition and nutrition.canAddFitnessXp then
+        local okFitness, canAddFitnessXp = pcall(function()
+            return nutrition:canAddFitnessXp()
+        end)
+        if okFitness and not canAddFitnessXp then
+            return 0
+        end
+    end
+    if PerkFactory and PerkFactory.Perks and perkType == PerkFactory.Perks.Strength and nutrition and nutrition.getProteins then
+        local okProtein, proteins = pcall(function()
+            return nutrition:getProteins()
+        end)
+        if okProtein and tonumber(proteins) then
+            if tonumber(proteins) > 50 and tonumber(proteins) < 300 then
+                awardedAmount = awardedAmount * 1.5
+            elseif tonumber(proteins) < -300 then
+                awardedAmount = awardedAmount * 0.7
+            end
+        end
+    end
+
+    awardedAmount = awardedAmount * getCraftRecipeXpMultiplier(playerObj, perk)
+    local playerXp = playerObj and playerObj.getXp and playerObj:getXp() or nil
+    if not playerXp or not playerXp.getXP or not perk.getTotalXpForLevel then
+        return awardedAmount
+    end
+
+    local okCap, cappedAmount = pcall(function()
+        local currentXp = playerXp:getXP(perk:getType())
+        local maxXp = perk:getTotalXpForLevel(10)
+        return math.max(0, math.min(awardedAmount, maxXp - currentXp))
+    end)
+
+    return okCap and cappedAmount or awardedAmount
+end
+
+local function formatCraftRecipeXpAmount(amount)
+    local rounded = math.floor((amount * 10) + 0.5) / 10
+    return string.format("%.1f", rounded)
+end
+
+local function buildCraftRecipeXpLine(recipe, playerObj)
+    if not recipe or not playerObj then
+        return nil
+    end
+
+    local okCount, awardCount = pcall(function()
+        return recipe:getXPAwardCount()
+    end)
+    if not okCount or not tonumber(awardCount) or tonumber(awardCount) <= 0 then
+        return nil
+    end
+
+    local lines = { getTextOrNull("UI_QoLforSacriel_CraftRecipe_XpGained") or "XP Gained" }
+    for index = 0, tonumber(awardCount) - 1 do
+        local okAward, award = pcall(function()
+            return recipe:getXPAward(index)
+        end)
+        if okAward and award then
+            local okPerk, perk = pcall(function()
+                return award:getPerk()
+            end)
+            local okAmount, amount = pcall(function()
+                return award:getAmount()
+            end)
+            if okPerk and perk and okAmount and tonumber(amount) then
+                local perkName = perk:getName()
+                if perkName and perkName ~= "" then
+                    local awardedAmount = getCraftRecipeAwardAmount(playerObj, perk, tonumber(amount))
+                    lines[#lines + 1] = tostring(perkName) .. ": " .. formatCraftRecipeXpAmount(awardedAmount) .. " XP"
+                end
+            end
+        end
+    end
+
+    return #lines > 1 and table.concat(lines, "\n") or nil
+end
+
+local function logCraftRecipeXpState(widget, recipe, xpLine)
+    if not widget then
+        return
+    end
+
+    local recipeName = getRecipeDisplayName(recipe)
+    local debugSignature = tostring(recipeName) .. "|" .. tostring(xpLine or "")
+    if widget.qolCraftRecipeXpDebugSignature == debugSignature then
+        return
+    end
+    widget.qolCraftRecipeXpDebugSignature = debugSignature
+
+    if not isCraftRecipeXpEnabled() then
+        logDebug("craft XP skipped: recipe='" .. tostring(recipeName) .. "', option disabled")
+        return
+    end
+
+    if not recipe then
+        logDebug("craft XP unavailable: selected recipe was nil")
+        return
+    end
+
+    local okCount, awardCount = pcall(function()
+        return recipe:getXPAwardCount()
+    end)
+    if not okCount or not tonumber(awardCount) then
+        logDebug("craft XP unavailable: getXPAwardCount failed for recipe='" .. tostring(recipeName) .. "'")
+        return
+    end
+
+    logDebug(
+        "craft XP read: recipe='" .. tostring(recipeName)
+        .. "', awards=" .. tostring(awardCount)
+        .. ", outputBox=" .. tostring(widget.outputItems ~= nil)
+        .. ", displayLine=" .. tostring(xpLine ~= nil and xpLine ~= "")
+    )
+
+    for index = 0, tonumber(awardCount) - 1 do
+        local okAward, award = pcall(function()
+            return recipe:getXPAward(index)
+        end)
+        if not okAward or not award then
+            logDebug("craft XP award invalid: recipe='" .. tostring(recipeName) .. "', index=" .. tostring(index))
+        else
+            local okPerk, perk = pcall(function()
+                return award:getPerk()
+            end)
+            local okAmount, amount = pcall(function()
+                return award:getAmount()
+            end)
+            local perkName = okPerk and perk and perk:getName() or "?"
+            logDebug(
+                "craft XP award: recipe='" .. tostring(recipeName)
+                .. "', index=" .. tostring(index)
+                .. ", perk='" .. tostring(perkName)
+                .. "', amount=" .. tostring(okAmount and amount or "?")
+            )
+        end
+    end
+end
+
 local function emitCraftRecipeSelectionDebug(titleHeader)
     if not titleHeader or not titleHeader.logic then
         return
@@ -913,7 +1162,6 @@ local function applyTooltipAppendFromScriptTable(widget, scriptTable, item, sour
 
     local statsText = buildStatsDescription(item, { forceFullStats = true, context = "crafting" })
     if not statsText then
-        logDebug(sourceTag .. " no equipment stats for current item")
         return false
     end
 
@@ -921,11 +1169,9 @@ local function applyTooltipAppendFromScriptTable(widget, scriptTable, item, sour
     local mergedText = appendStatsToTooltipText(baseText, statsText)
     if mergedText and scriptTable.icon.setMouseOverText then
         scriptTable.icon:setMouseOverText(mergedText)
-        logDebug(sourceTag .. " appended tooltip stats for " .. tostring(scriptTable.inputFullName or scriptTable.iconText or "unknown"))
         return true
     end
 
-    logDebug(sourceTag .. " unable to append: icon missing setMouseOverText")
     return false
 end
 
@@ -1090,7 +1336,6 @@ local function appendStatsToObjectTooltip(tooltipUI, item, sourceTag)
 
     local lines = collectEquipmentStats(item, { forceFullStats = true, context = "crafting" })
     if #lines == 0 then
-        logDebug(sourceTag .. " no equipment stats for current item")
         return false
     end
 
@@ -1129,7 +1374,6 @@ local function appendStatsToObjectTooltip(tooltipUI, item, sourceTag)
     end
 
     tooltipUI:setHeight(y + padBottom)
-    logDebug(sourceTag .. " appended ObjectTooltip stats")
     return true
 end
 
@@ -1147,6 +1391,38 @@ local function patchCraftLogicPreviewTooltip()
 
     ISWidgetCraftLogicInputControl.createDynamicChildren = function(self)
         originalCraftLogicInputControlCreateDynamicChildren(self)
+
+        local xpLine = nil
+        if isCraftRecipeXpEnabled() then
+            xpLine = buildCraftRecipeXpLine(self.recipe)
+        end
+
+        logCraftRecipeXpState(self, self.recipe, xpLine)
+
+        if xpLine and xpLine ~= "" and self.outputItems then
+            self.qolCraftRecipeXpLabel = ISXuiSkin.build(
+                self.xuiSkin,
+                "S_NeedsAStyle",
+                ISLabel,
+                0,
+                0,
+                -1,
+                xpLine,
+                1,
+                1,
+                1,
+                1,
+                UIFont.Small,
+                true
+            )
+            self.qolCraftRecipeXpLabel:initialise()
+            self.qolCraftRecipeXpLabel:instantiate()
+            self.qolCraftRecipeXpLabel:setHeightToName(0)
+            self:addChild(self.qolCraftRecipeXpLabel)
+            logDebug("craft XP output label added: recipe='" .. tostring(getRecipeDisplayName(self.recipe)) .. "'")
+        elseif isCraftRecipeXpEnabled() and xpLine and xpLine ~= "" then
+            logDebug("craft XP output label skipped: output box missing for recipe='" .. tostring(getRecipeDisplayName(self.recipe)) .. "'")
+        end
 
         if not self or not self.outputItems then
             return
@@ -1171,6 +1447,39 @@ local function patchCraftLogicPreviewTooltip()
 
         self.outputItems.qolEquipmentStatsTooltipPatched = true
         logDebug("craft logic preview tooltip patch active")
+    end
+
+    originalCraftLogicInputControlCalculateLayout = ISWidgetCraftLogicInputControl.calculateLayout
+
+    ISWidgetCraftLogicInputControl.calculateLayout = function(self, preferredWidth, preferredHeight)
+        local xpLabel = self.qolCraftRecipeXpLabel
+        if not xpLabel or not self.outputItems then
+            return originalCraftLogicInputControlCalculateLayout(self, preferredWidth, preferredHeight)
+        end
+
+        xpLabel:setWidthToName(0)
+        xpLabel:setHeightToName(0)
+
+        local labelHeight = xpLabel:getHeight()
+        local labelSpacing = self.elementSpacing or 0
+        local footerHeight = labelHeight + labelSpacing
+        local availableHeight = math.max(0, (preferredHeight or 0) - footerHeight)
+
+        originalCraftLogicInputControlCalculateLayout(self, preferredWidth, availableHeight)
+
+        xpLabel:setX(self.outputItems:getX() + (self.outputItems:getWidth() - xpLabel:getWidth()) / 2)
+        xpLabel:setY(self.outputItems:getY() + self.outputItems:getHeight() + labelSpacing)
+        self:setHeight(self:getHeight() + footerHeight)
+
+        if not self.qolCraftRecipeXpLayoutLogged then
+            self.qolCraftRecipeXpLayoutLogged = true
+            logDebug(
+                "craft XP output label layout: x=" .. tostring(xpLabel:getX())
+                .. ", y=" .. tostring(xpLabel:getY())
+                .. ", width=" .. tostring(xpLabel:getWidth())
+                .. ", height=" .. tostring(xpLabel:getHeight())
+            )
+        end
     end
 
     return true
@@ -1249,6 +1558,10 @@ local function patchInventoryTooltipRenderFallback()
             return originalToolTipInvRender(self)
         end
 
+        if self.owner and self.owner.Type == "ISEquippedItem" then
+            return originalToolTipInvRender(self)
+        end
+
         local lines = collectEquipmentStats(self.item)
         if #lines == 0 then
             return originalToolTipInvRender(self)
@@ -1316,12 +1629,30 @@ local function patchCraftTitleHeaderInfo()
 
     originalWidgetTitleHeaderUpdateLabels = ISWidgetTitleHeader.updateLabels
 
+    local function measureTitleHeaderPanel(text, font)
+        if not text or text == "" or not getTextManager then
+            return nil
+        end
+
+        local textManager = getTextManager()
+        if not textManager or not textManager.MeasureStringX or not textManager.MeasureStringY then
+            return nil
+        end
+
+        local width = 0
+        for line in string.gmatch(text .. "\n", "([^\n]*)\n") do
+            width = math.max(width, textManager:MeasureStringX(font, line))
+        end
+
+        return {
+            text = text,
+            width = width,
+            height = textManager:MeasureStringY(font, text),
+        }
+    end
+
     ISWidgetTitleHeader.updateLabels = function(self)
         originalWidgetTitleHeaderUpdateLabels(self)
-
-        if not isCraftOutputTooltipEnabled() then
-            return
-        end
 
         emitCraftRecipeSelectionDebug(self)
 
@@ -1331,8 +1662,15 @@ local function patchCraftTitleHeaderInfo()
 
         local baseTitle = self.titleLabel.origTitleStr or self.titleLabel.name or self.title or ""
         local recipeSignature = getLogicRecipeSignature(self.logic)
+        local okRecipe, recipe = safeCallMethod(self.logic, "getRecipe")
+        local okPlayer, playerObj = safeCallMethod(self.logic, "getPlayer")
+        local xpLine = nil
+        if okRecipe and okPlayer and isCraftRecipeXpEnabled() then
+            xpLine = buildCraftRecipeXpLine(recipe, playerObj)
+        end
+        logCraftRecipeXpState(self, okRecipe and recipe or nil, xpLine)
 
-        if self.qolLastTitleStatsRecipeSignature ~= recipeSignature then
+        if isCraftOutputTooltipEnabled() and self.qolLastTitleStatsRecipeSignature ~= recipeSignature then
             self.qolLastTitleStatsRecipeSignature = recipeSignature
             self.qolLastTitleStatsLine = buildTitleHeaderOutputStatsLine(self.logic)
 
@@ -1344,15 +1682,142 @@ local function patchCraftTitleHeaderInfo()
         end
 
         local statsLine = self.qolLastTitleStatsLine
-        if statsLine and statsLine ~= "" then
-            self.titleLabel:setName(tostring(baseTitle) .. "\n" .. tostring(statsLine))
+        local statsText = isCraftOutputTooltipEnabled() and statsLine or nil
+        local xpText = xpLine and xpLine ~= "" and xpLine or nil
+        if xpText then
+            if self.qolLastXpTitleHeaderSignature ~= recipeSignature then
+                self.qolLastXpTitleHeaderSignature = recipeSignature
+                logDebug("craft XP title header added: recipe='" .. tostring(getRecipeDisplayName(recipe)) .. "'")
+            end
+        end
+
+        self.titleLabel:setName(tostring(baseTitle))
+        self.titleLabel:setHeightToName(0)
+        local font = self.titleLabel.font or UIFont.Small
+        self.qolTitleHeaderStatsPanel = measureTitleHeaderPanel(statsText, font)
+        self.qolTitleHeaderXpPanel = measureTitleHeaderPanel(xpText, font)
+        self.qolTitleHeaderHasPanels = self.qolTitleHeaderStatsPanel ~= nil or self.qolTitleHeaderXpPanel ~= nil
+        if self.qolTitleHeaderHasPanels then
+            local panelHeight = 0
+            if self.qolTitleHeaderStatsPanel then
+                panelHeight = math.max(panelHeight, self.qolTitleHeaderStatsPanel.height)
+            end
+            if self.qolTitleHeaderXpPanel then
+                panelHeight = math.max(panelHeight, self.qolTitleHeaderXpPanel.height)
+            end
+            self.qolTitleHeaderPanelReservedHeight = panelHeight + 11
+        else
+            self.qolTitleHeaderPanelReservedHeight = 0
+        end
+    end
+
+    originalWidgetTitleHeaderCalculateLayout = ISWidgetTitleHeader.calculateLayout
+
+    ISWidgetTitleHeader.calculateLayout = function(self, preferredWidth, preferredHeight)
+        originalWidgetTitleHeaderCalculateLayout(self, preferredWidth, preferredHeight)
+
+        if not self.qolTitleHeaderHasPanels or not self.titleLabel then
+            return
+        end
+
+        local statsPanel = self.qolTitleHeaderStatsPanel
+        local xpPanel = self.qolTitleHeaderXpPanel
+        local gap = statsPanel and xpPanel and 10 or 0
+        local panelsWidth = 0
+        if statsPanel then
+            panelsWidth = panelsWidth + statsPanel.width + 8
+        end
+        if xpPanel then
+            panelsWidth = panelsWidth + xpPanel.width + 8
+        end
+        panelsWidth = panelsWidth + gap
+
+        local requiredWidth = self:getWidth() - self.titleLabel:getWidth() + panelsWidth
+        if requiredWidth > self:getWidth() then
+            originalWidgetTitleHeaderCalculateLayout(self, requiredWidth, preferredHeight)
+        end
+
+        local contentHeight = self:getHeight()
+        self.qolTitleHeaderPanelY = contentHeight + 5
+        self:setHeight(contentHeight + (self.qolTitleHeaderPanelReservedHeight or 0))
+    end
+
+    originalWidgetTitleHeaderRender = ISWidgetTitleHeader.render
+
+    ISWidgetTitleHeader.render = function(self)
+        originalWidgetTitleHeaderRender(self)
+
+        if not self.qolTitleHeaderHasPanels then
+            return
+        end
+
+        local padding = 4
+        local font = self.titleLabel and self.titleLabel.font or UIFont.Small
+    local panelY = self.qolTitleHeaderPanelY or 0
+        local panelX = self.titleLabel:getX() + 4
+        local function drawPanel(panel)
+            if not panel then
+                return
+            end
+            local x = panelX - padding
+            local y = panelY - padding
+            local width = panel.width + (padding * 2)
+            local height = panel.height + (padding * 2)
+            self:drawRect(x, y, width, height, 0.32, 0.08, 0.08, 0.08)
+            self:drawRectBorder(x, y, width, height, 0.8, 0.75, 0.9, 0.75)
+            local lineY = panelY
+            for line in string.gmatch(panel.text .. "\n", "([^\n]*)\n") do
+                self:drawText(line, panelX, lineY, 1, 1, 1, 1, font)
+                lineY = lineY + getTextManager():getFontHeight(font)
+            end
+            panelX = panelX + width + 6
+        end
+
+        drawPanel(self.qolTitleHeaderStatsPanel)
+        drawPanel(self.qolTitleHeaderXpPanel)
+    end
+
+    logDebug("craft title header patch active")
+    return true
+end
+
+local function patchCraftLogicTitle()
+    pcall(require, "Entity/ISUI/Components/Crafting/ISWidgetCraftLogicTitle")
+    if not ISWidgetCraftLogicTitle or not ISWidgetCraftLogicTitle.createChildren then
+        return false
+    end
+
+    if originalWidgetCraftLogicTitleCreateChildren then
+        return true
+    end
+
+    originalWidgetCraftLogicTitleCreateChildren = ISWidgetCraftLogicTitle.createChildren
+
+    ISWidgetCraftLogicTitle.createChildren = function(self)
+        originalWidgetCraftLogicTitleCreateChildren(self)
+
+        if not self.titleLabel then
+            return
+        end
+
+        local baseTitle = self.titleLabel.origTitleStr or self.titleLabel.name or self.title or ""
+        local lines = {}
+        if isCraftOutputTooltipEnabled() then
+            local statsLine = buildTitleHeaderOutputStatsLine(self.logic)
+            if statsLine and statsLine ~= "" then
+                lines[#lines + 1] = statsLine
+            end
+        end
+
+        if #lines > 0 then
+            self.titleLabel:setName(tostring(baseTitle) .. "\n" .. table.concat(lines, "\n"))
         else
             self.titleLabel:setName(tostring(baseTitle))
         end
         self.titleLabel:setHeightToName(0)
     end
 
-    logDebug("craft title header patch active")
+    logDebug("craft recipe title info patch active")
     return true
 end
 
@@ -1511,7 +1976,8 @@ local function tryPatchAll()
     local fallbackOk = patchCraftTooltipRenderFallback()
     local invTooltipOk = patchInventoryTooltipRenderFallback()
     local titleHeaderOk = patchCraftTitleHeaderInfo()
-    return inventoryOk and craftOk and craftLogicOk and fallbackOk and invTooltipOk and titleHeaderOk
+    local craftLogicTitleOk = patchCraftLogicTitle()
+    return inventoryOk and craftOk and craftLogicOk and fallbackOk and invTooltipOk and titleHeaderOk and craftLogicTitleOk
 end
 
 local function onRetryTick()
