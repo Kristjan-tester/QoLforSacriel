@@ -36,6 +36,17 @@ local function logDebug(message)
     if settingsRef.get("QoLforSacriel_DebugLogs") ~= true then
         return
     end
+    if not settingsRef.isEnabled
+        or settingsRef.isEnabled("QoLforSacriel_EnableUIFixes") ~= true
+        or (
+            settingsRef.get("QoLforSacriel_UIFixes_EnableExactEquipmentStats") ~= true
+            and settingsRef.get("QoLforSacriel_UIFixes_EnableCraftOutputItemTooltip") ~= true
+            and settingsRef.get("QoLforSacriel_UIFixes_EnableCraftRecipeXp") ~= true
+            and settingsRef.get("QoLforSacriel_UIFixes_ShowAllEquipmentTooltipStats") ~= true
+        )
+    then
+        return
+    end
     loggerRef.debug("UIFixes.EquipmentStatsDisplay: " .. tostring(message))
 end
 

@@ -138,7 +138,6 @@ function SoundSettingsProvider.get(settings)
     out.arrowScalePercent = clampArrowScalePercent(scalePercent)
     out.maxTrackedCues = clampInt(resolveValue(settings, "QoLforSacriel_SoundIntel_MaxTrackedCues"), 4, 128)
     out.cueDurationMs = clampInt(resolveValue(settings, "QoLforSacriel_SoundIntel_CueDurationMs"), 300, 5000)
-
     out.categoryPlayerLocal = resolveValue(settings, "QoLforSacriel_SoundIntel_Category_PlayerLocal") == true
     out.categoryZombie = resolveValue(settings, "QoLforSacriel_SoundIntel_Category_Zombie") == true
     out.categoryCombat = resolveValue(settings, "QoLforSacriel_SoundIntel_Category_Combat") == true

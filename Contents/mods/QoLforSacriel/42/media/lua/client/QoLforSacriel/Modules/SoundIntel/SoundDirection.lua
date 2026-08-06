@@ -19,7 +19,7 @@ local rendererUnavailableLogged = false
 local DEBUG_META_TEST_HOLD_MS = 5000
 
 local function isSoundDirectionRuntimeEnabled(settings, resolved)
-    if settings.isEnabled("QoLforSacriel_EnableUIFixes") ~= true then
+    if settings.isEnabled() ~= true then
         return false
     end
     if settings.get("QoLforSacriel_UIFixes_EnableSoundDirection") ~= true then
@@ -661,20 +661,19 @@ local function onPostRender(settings, logger)
         logger.error("SoundIntel meta test cue error: " .. tostring(errDebugMeta))
     end
 
-    local activePlayers = getNumActivePlayers and getNumActivePlayers() or 1
-    for playerIndex = 0, activePlayers - 1 do
-        local playerObj = getSpecificPlayer(playerIndex)
-        if playerObj then
-            for i = 1, #cues do
-                local cue = cues[i]
-                if isRenderEnabledForCue(cue, resolved) then
-                    local ok, err = pcall(function()
-                        renderModule.renderCue(playerObj, cue, nowMs, resolved)
-                    end)
-                    if not ok and logger then
-                        logger.error("SoundIntel render error: " .. tostring(err))
-                    end
-                end
+    local playerObj = getPlayer()
+    if not playerObj then
+        return
+    end
+
+    for i = 1, #cues do
+        local cue = cues[i]
+        if isRenderEnabledForCue(cue, resolved) then
+            local ok, err = pcall(function()
+                renderModule.renderCue(playerObj, cue, nowMs, resolved)
+            end)
+            if not ok and logger then
+                logger.error("SoundIntel render error: " .. tostring(err))
             end
         end
     end

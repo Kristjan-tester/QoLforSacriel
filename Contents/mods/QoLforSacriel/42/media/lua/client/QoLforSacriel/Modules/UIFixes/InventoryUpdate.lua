@@ -15,6 +15,12 @@ local function logDebug(message)
     if not settingsRef or not settingsRef.get or settingsRef.get("QoLforSacriel_DebugLogs") ~= true then
         return
     end
+    if not settingsRef.isEnabled
+        or settingsRef.isEnabled("QoLforSacriel_EnableUIFixes") ~= true
+        or settingsRef.get("QoLforSacriel_UIFixes_EnableInventoryUpdate") ~= true
+    then
+        return
+    end
     loggerRef.debug("UIFixes.InventoryUpdate: " .. tostring(message))
 end
 

@@ -1,5 +1,5 @@
 QoLforSacriel_Version = {
-    runtime = "qolfs-phase4-2026-08-05-ai-craft-recipe-xp-vanilla-parity-v39"
+    runtime = "qolfs-phase4-2026-08-06-ai-sound-direction-noise-radius-split-v54"
 }
 
 return QoLforSacriel_Version
