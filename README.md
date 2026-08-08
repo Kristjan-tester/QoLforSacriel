@@ -2,17 +2,16 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version v0.8 
+Current version: v0.8 
 
-Why we are doing this?
-  These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
-	None of these mods affect difficulty of the game.
+- Why we are doing this?
+	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
+	- None of these mods affect difficulty of the game.
 
-Overall design idea: 
-  Minimal changes to keep game as close to original as possible.
-  All modules can be toggled on/off from modoptions on the fly. And fine-tuned where appropriate. 
-  Made for single-player. Not tested in multiplayer.
-
+- Overall design idea: 
+	- Minimal changes to keep game as close to original as possible.
+	- All modules can be toggled on/off from modoptions on the fly. And fine-tuned where appropriate. 
+	- Made for single-player. Not tested in multiplayer.
  
 Features:
 - Character Audio Rings - shows radius where the sounds travels when made. Important:
