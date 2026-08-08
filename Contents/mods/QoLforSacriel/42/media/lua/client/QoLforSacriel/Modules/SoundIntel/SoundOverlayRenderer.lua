@@ -5,16 +5,19 @@ local SoundOverlayRenderer = {}
 local VERTICAL_MARKER_OFFSET = 10
 local MAX_LABEL_LENGTH = 20
 local ARROW_TEXTURE_PATH = "media/textures/SoundArrowBase.png"
+local PLAYER_SOUND_RING_TEXTURE_PATH = "media/textures/PlayerWorldSoundRing.png"
 
 local OverlayHost = ISUIElement:derive("QoLforSacrielSoundOverlayHost")
 local overlayHost = nil
 local arrowTexture = nil
+local playerSoundRingTexture = nil
 
 function OverlayHost:initialise()
     ISUIElement.initialise(self)
-    self:addToUIManager()
-    self.javaObject:setWantKeyEvents(false)
-    self.javaObject:setConsumeMouseEvents(false)
+    self:instantiate()
+    self:setWantKeyEvents(false)
+    self:setWantMouseEvents(false)
+    self:setWantExtraMouseEvents(false)
     self:setVisible(true)
 end
 
@@ -80,6 +83,19 @@ local function getArrowTexture()
 
     arrowTexture = getTexture(ARROW_TEXTURE_PATH)
     return arrowTexture
+end
+
+local function getPlayerSoundRingTexture()
+    if playerSoundRingTexture then
+        return playerSoundRingTexture
+    end
+
+    if not getTexture then
+        return nil
+    end
+
+    playerSoundRingTexture = getTexture(PLAYER_SOUND_RING_TEXTURE_PATH)
+    return playerSoundRingTexture
 end
 
 local function readStringMethod(obj, methodName, ...)
@@ -376,6 +392,118 @@ function SoundOverlayRenderer.renderCue(playerObj, cue, nowMs, config)
             local markerX = x + (-uy * markerOffset)
             local markerY = y + (ux * markerOffset)
             getTextManager():DrawString(UIFont.Medium, markerX - 6, markerY - 6, vertical, r, g, b, a)
+        end
+    end
+end
+
+local function playerSoundRingAlpha(ring, nowMs, config)
+    local lifeMs = math.max(1, ring.expiresAtMs - ring.createdAtMs)
+    local lifeLeft = math.max(0, ring.expiresAtMs - nowMs)
+    local opacityPercent = (config and config.playerWorldSoundRingOpacityPercent) or 25
+    local maxAlpha = math.max(0.05, math.min(0.80, opacityPercent / 100))
+    return maxAlpha * (lifeLeft / lifeMs)
+end
+
+local function playerSoundRingProgress(ring, nowMs)
+    local lifeMs = math.max(1, ring.expiresAtMs - ring.createdAtMs)
+    local elapsed = math.max(0, nowMs - ring.createdAtMs)
+    return math.min(1, elapsed / lifeMs)
+end
+
+local function projectWorldPoint(x, y, z)
+    return IsoUtils.XToScreenExact(x, y, z, 0), IsoUtils.YToScreenExact(x, y, z, 0)
+end
+
+local function isQuadNearViewport(points, config)
+    local core = getCore and getCore() or nil
+    local width = getPlayerScreenWidth and getPlayerScreenWidth(0) or (core and core.getScreenWidth and core:getScreenWidth() or 0)
+    local height = getPlayerScreenHeight and getPlayerScreenHeight(0) or (core and core.getScreenHeight and core:getScreenHeight() or 0)
+    local zoom = core and core.getZoom and core:getZoom(0) or 1
+    local margin = (config and config.playerWorldSoundRingCullingMarginPx) or 128
+    margin = math.max(0, math.floor(tonumber(margin) or 128))
+    local maxX = (width * zoom) + margin
+    local maxY = (height * zoom) + margin
+    local minQuadX = points[1].x
+    local maxQuadX = points[1].x
+    local minQuadY = points[1].y
+    local maxQuadY = points[1].y
+
+    for i = 2, #points do
+        local point = points[i]
+        if point.x < minQuadX then
+            minQuadX = point.x
+        elseif point.x > maxQuadX then
+            maxQuadX = point.x
+        end
+        if point.y < minQuadY then
+            minQuadY = point.y
+        elseif point.y > maxQuadY then
+            maxQuadY = point.y
+        end
+    end
+
+    return maxQuadX >= -margin and minQuadX <= maxX and maxQuadY >= -margin and minQuadY <= maxY
+end
+
+function SoundOverlayRenderer.renderPlayerWorldSoundRing(playerObj, ring, nowMs, config)
+    if not playerObj or not ring then
+        return
+    end
+    if not config or config.playerWorldSoundRingsEnabled ~= true then
+        return
+    end
+
+    local texture = getPlayerSoundRingTexture()
+    if not texture then
+        return
+    end
+
+    local progress = playerSoundRingProgress(ring, nowMs)
+    local rawRadius = tonumber(ring.radius) or 0
+    local worldRadius = math.max(0.25, rawRadius * progress)
+    local z = ring.z ~= nil and ring.z or playerObj:getZ()
+    local x = ring.x + 0.5
+    local y = ring.y + 0.5
+    local topLeftX, topLeftY = projectWorldPoint(x - worldRadius, y - worldRadius, z)
+    local topRightX, topRightY = projectWorldPoint(x + worldRadius, y - worldRadius, z)
+    local bottomRightX, bottomRightY = projectWorldPoint(x + worldRadius, y + worldRadius, z)
+    local bottomLeftX, bottomLeftY = projectWorldPoint(x - worldRadius, y + worldRadius, z)
+    local points = {
+        { x = topLeftX, y = topLeftY },
+        { x = topRightX, y = topRightY },
+        { x = bottomRightX, y = bottomRightY },
+        { x = bottomLeftX, y = bottomLeftY },
+    }
+
+    local alpha = playerSoundRingAlpha(ring, nowMs, config)
+    if isQuadNearViewport(points, config) then
+        local host = ensureOverlayHost()
+        if host and host.drawTextureAllPoint then
+            host:drawTextureAllPoint(
+                texture,
+                points[1].x,
+                points[1].y,
+                points[2].x,
+                points[2].y,
+                points[3].x,
+                points[3].y,
+                points[4].x,
+                points[4].y,
+                0.25,
+                0.95,
+                0.45,
+                alpha
+            )
+        end
+    end
+
+    if config.showPlayerWorldSoundRadiusLabel == true then
+        local centerX, centerY = projectWorldPoint(x, y, z)
+        local label = tostring(math.floor(rawRadius)) .. " tiles"
+        local textManager = getTextManager and getTextManager() or nil
+        if textManager then
+            local labelWidth = textManager:MeasureStringX(UIFont.Small, label)
+            textManager:DrawString(UIFont.Small, centerX - (labelWidth / 2), centerY - 18, label, 0.85, 1.0, 0.85, math.max(0.60, alpha))
         end
     end
 end

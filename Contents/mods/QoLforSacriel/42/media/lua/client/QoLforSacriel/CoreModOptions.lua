@@ -323,6 +323,8 @@ function CoreModOptions.register(logger)
     options:addTickBox("debugLogs", "UI_QoLforSacriel_Modules_DebugLogs", false, "UI_QoLforSacriel_Modules_DebugLogs_Tooltip")
     options:addTickBox("enableSoundDirection", "UI_QoLforSacriel_Modules_EnableSoundDirection", true, "UI_QoLforSacriel_Modules_EnableSoundDirection_Tooltip")
     options:addDescription("UI_QoLforSacriel_Modules_SoundDirectionNote")
+    options:addTickBox("enableNoiseRadius", "UI_QoLforSacriel_Modules_EnableNoiseRadius", true, "UI_QoLforSacriel_Modules_EnableNoiseRadius_Tooltip")
+    options:addDescription("UI_QoLforSacriel_Modules_NoiseRadiusNote")
 
     options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_UIFixesTitle")

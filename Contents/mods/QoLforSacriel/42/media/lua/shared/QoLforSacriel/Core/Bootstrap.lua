@@ -30,6 +30,7 @@ local function registerModules()
     local inventoryUpdate = safeRequire("QoLforSacriel/Modules/UIFixes/InventoryUpdate")
     local heavyCraftDrop = safeRequire("QoLforSacriel/Modules/UIFixes/HeavyCraftDrop")
     local soundDirection = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundDirection")
+    local soundRadius = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundRadius")
     local furnitureNudge = safeRequire("QoLforSacriel/Modules/FurnitureNudge/FurnitureNudge")
     local lightSwitchToggle = safeRequire("QoLforSacriel/Modules/LightSwitchToggle/LightSwitchToggle")
     local dragDrop = safeRequire("QoLforSacriel/Modules/DragDrop/DragDropFatigue")
@@ -59,7 +60,10 @@ local function registerModules()
         registry.register("UIFixes.HeavyCraftDrop", "QoLforSacriel_EnableUIFixes", heavyCraftDrop.init)
     end
     if soundDirection and soundDirection.init then
-        registry.register("UIFixes.SoundDirection", "QoLforSacriel_EnableUIFixes", soundDirection.init)
+        registry.register("SoundDirection.Base", "QoLforSacriel_EnableMod", soundDirection.init)
+    end
+    if soundRadius and soundRadius.init then
+        registry.register("SoundRadius.Base", "QoLforSacriel_EnableMod", soundRadius.init)
     end
     if furnitureNudge and furnitureNudge.init then
         registry.register("FurnitureNudge.Base", "QoLforSacriel_EnableFurnitureNudge", furnitureNudge.init)
@@ -88,6 +92,12 @@ local function onGameStart()
 
     if isServer() and not isClient() then
         logger.info("Server-only context detected; skipping client module startup")
+        initialized = true
+        return
+    end
+
+    if isClient and isClient() then
+        logger.info("Multiplayer client detected; QoLforSacriel is single-player only, skipping module startup")
         initialized = true
         return
     end

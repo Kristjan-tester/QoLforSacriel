@@ -77,11 +77,11 @@ function SoundModOptions.register(logger)
 
     options:addSlider("maxTrackedCues", "UI_QoLforSacriel_SoundIntel_MaxTrackedCues", 4, 128, 1, 24, "UI_QoLforSacriel_SoundIntel_MaxTrackedCues_Tooltip")
     options:addSlider("cueDurationMs", "UI_QoLforSacriel_SoundIntel_CueDurationMs", 300, 5000, 100, 1400, "UI_QoLforSacriel_SoundIntel_CueDurationMs_Tooltip")
-
     options:addSeparator()
     options:addTitle("UI_QoLforSacriel_SoundIntel_CategoryTitle")
     options:addTickBox("catPlayerLocal", "UI_QoLforSacriel_SoundIntel_CategoryPlayerLocal", true, "UI_QoLforSacriel_SoundIntel_CategoryPlayerLocal_Tooltip")
     options:addTickBox("catZombie", "UI_QoLforSacriel_SoundIntel_CategoryZombie", true, "UI_QoLforSacriel_SoundIntel_CategoryZombie_Tooltip")
+    options:addTickBox("catCombat", "UI_QoLforSacriel_SoundIntel_CategoryCombat", true, "UI_QoLforSacriel_SoundIntel_CategoryCombat_Tooltip")
     options:addTickBox("catEnvironment", "UI_QoLforSacriel_SoundIntel_CategoryEnvironment", true, "UI_QoLforSacriel_SoundIntel_CategoryEnvironment_Tooltip")
     options:addTickBox("catVehicle", "UI_QoLforSacriel_SoundIntel_CategoryVehicle", true, "UI_QoLforSacriel_SoundIntel_CategoryVehicle_Tooltip")
     options:addTickBox("catAlarmAndSignal", "UI_QoLforSacriel_SoundIntel_CategoryAlarmAndSignal", true, "UI_QoLforSacriel_SoundIntel_CategoryAlarmAndSignal_Tooltip")

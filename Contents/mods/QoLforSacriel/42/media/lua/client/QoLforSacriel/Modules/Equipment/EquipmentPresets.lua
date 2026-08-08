@@ -1495,6 +1495,14 @@ local function onTick(settings, logger)
         return
     end
 
+    if settings.isEnabled("QoLforSacriel_EnableEquipment") ~= true
+        or settings.get("QoLforSacriel_Equipment_EnablePresets") ~= true
+    then
+        pendingHotkeyToggle = nil
+        pendingHotkeyWaitLogged = false
+        return
+    end
+
     pendingHotkeyToggle = nil
 
     local playerObj = getSpecificPlayer(0)
