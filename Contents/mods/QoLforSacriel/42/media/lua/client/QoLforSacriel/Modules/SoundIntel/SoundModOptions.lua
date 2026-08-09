@@ -50,7 +50,22 @@ local function onTriggerRandomMetaEvent(_, _, logger)
     end
 end
 
-function SoundModOptions.register(logger)
+local function attachApplyRefresh(options, onApplyRefresh)
+    if not options or type(onApplyRefresh) ~= "function" or options._qolSoundApplyRefreshAttached == true then
+        return
+    end
+
+    local previousApply = options.apply
+    options.apply = function(self)
+        if previousApply then
+            previousApply(self)
+        end
+        onApplyRefresh()
+    end
+    options._qolSoundApplyRefreshAttached = true
+end
+
+function SoundModOptions.register(logger, onApplyRefresh)
     if not PZAPI or not PZAPI.ModOptions or not PZAPI.ModOptions.create then
         if logger then
             logger.debug("SoundIntel ModOptions unavailable; using fallback settings")
@@ -60,6 +75,7 @@ function SoundModOptions.register(logger)
 
     local options = PZAPI.ModOptions:getOptions(MOD_OPTIONS_ID)
     if options then
+        attachApplyRefresh(options, onApplyRefresh)
         return options
     end
 
@@ -88,6 +104,7 @@ function SoundModOptions.register(logger)
     options:addTickBox("catMeta", "UI_QoLforSacriel_SoundIntel_CategoryMeta", true, "UI_QoLforSacriel_SoundIntel_CategoryMeta_Tooltip")
     options:addTickBox("catUnknown", "UI_QoLforSacriel_SoundIntel_CategoryUnknown", true, "UI_QoLforSacriel_SoundIntel_CategoryUnknown_Tooltip")
 
+    attachApplyRefresh(options, onApplyRefresh)
     return options
 end
 
