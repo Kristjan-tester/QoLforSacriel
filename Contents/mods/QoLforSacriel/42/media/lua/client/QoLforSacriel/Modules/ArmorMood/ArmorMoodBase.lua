@@ -173,9 +173,25 @@ local function isSuppressedTimedAction(playerObj)
     return actionTypeText:lower():find("craft", 1, true) ~= nil
 end
 
+local function isSleepingOrResting(playerObj)
+    if not playerObj then
+        return false
+    end
+
+    if playerObj:isAsleep() or playerObj:isSitOnGround() or playerObj:isSittingOnFurniture() then
+        return true
+    end
+
+    return playerObj.isResting and playerObj:isResting() or false
+end
+
 local function shouldSuspendArmorEffect(playerObj)
     if not playerObj then
         return false
+    end
+
+    if isSleepingOrResting(playerObj) then
+        return true
     end
 
     if playerObj.isSprinting and playerObj:isSprinting() then

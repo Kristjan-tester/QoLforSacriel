@@ -8,6 +8,7 @@ local HAND_MODE_PRIMARY = "primary"
 local HAND_MODE_SECONDARY = "secondary"
 local HAND_MODE_BOTH = "both"
 local MAX_BODY_LOCATION_LENGTH = 64
+local MAX_PRESET_NAME_LENGTH = 24
 local HOTKEY_NONE_TOKEN = "NONE"
 local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
 
@@ -94,6 +95,34 @@ local function trimText(value)
     text = text:gsub("^%s+", "")
     text = text:gsub("%s+$", "")
     return text
+end
+
+local function truncateUtf8(text, maxCharacters)
+    local characterCount = 0
+    local byteIndex = 1
+    local byteLength = #text
+
+    while byteIndex <= byteLength and characterCount < maxCharacters do
+        local firstByte = string.byte(text, byteIndex)
+        local characterLength = 1
+
+        if firstByte >= 0xF0 and firstByte <= 0xF7 then
+            characterLength = 4
+        elseif firstByte >= 0xE0 and firstByte <= 0xEF then
+            characterLength = 3
+        elseif firstByte >= 0xC0 and firstByte <= 0xDF then
+            characterLength = 2
+        end
+
+        if byteIndex + characterLength - 1 > byteLength then
+            break
+        end
+
+        byteIndex = byteIndex + characterLength
+        characterCount = characterCount + 1
+    end
+
+    return string.sub(text, 1, byteIndex - 1)
 end
 
 local function getHotkeySettingName(index)
@@ -466,7 +495,13 @@ local function getPresetMenuLabel()
     return getTextOrNull("UI_QoLforSacriel_EquipmentPresets") or "Equipment Presets"
 end
 
-local function getPresetEntryLabel(index)
+local function getPresetEntryLabel(index, settings)
+    local configuredName = settings and settings.get and settings.get("QoLforSacriel_Equipment_PresetName" .. tostring(index))
+    configuredName = truncateUtf8(trimText(configuredName), MAX_PRESET_NAME_LENGTH)
+    if configuredName ~= "" then
+        return configuredName
+    end
+
     local key = "UI_QoLforSacriel_EquipmentPresetEntry" .. tostring(index)
     return getTextOrNull(key) or ("Preset " .. tostring(index))
 end
@@ -1413,7 +1448,7 @@ local function onInventoryContext(playerIndex, context, items, settings, logger)
     local presetCount = getConfiguredPresetCount(settings)
 
     for i = 1, presetCount do
-        local presetOption = subMenu:addOption(getPresetEntryLabel(i))
+        local presetOption = subMenu:addOption(getPresetEntryLabel(i, settings))
         local presetSubMenu = context:getNew(context)
         context:addSubMenu(presetOption, presetSubMenu)
 

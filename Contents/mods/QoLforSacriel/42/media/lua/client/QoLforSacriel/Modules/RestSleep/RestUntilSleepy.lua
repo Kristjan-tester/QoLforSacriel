@@ -6,6 +6,7 @@ local PAIN_INTERRUPT_LEVEL = 1
 local REST_SPEED_MULTIPLIER = 20
 local NORMAL_SPEED_MULTIPLIER = 1
 local REST_SPEED_SETTLE_SECONDS = 0.35
+local RECENT_SLEEP_COOLDOWN_HOURS = 1
 
 local function applyGameSpeed(multiplier)
     local targetMultiplier = tonumber(multiplier) or NORMAL_SPEED_MULTIPLIER
@@ -293,6 +294,27 @@ local function getPanicValue(playerObj)
     return math.max(0, moodleLevel) * 25
 end
 
+local function isSleepNeeded()
+    if not isClient or not isClient() then
+        return true
+    end
+
+    local serverOptions = getServerOptions and getServerOptions() or nil
+    return serverOptions and serverOptions:getBoolean("SleepNeeded") == true
+end
+
+local function hasRecentlySlept(playerObj)
+    if not isSleepNeeded() or not playerObj
+        or not playerObj.getHoursSurvived or not playerObj.getLastHourSleeped then
+        return false
+    end
+
+    local ok, hoursSinceSleep = pcall(function()
+        return playerObj:getHoursSurvived() - playerObj:getLastHourSleeped()
+    end)
+    return ok and hoursSinceSleep >= 0 and hoursSinceSleep <= RECENT_SLEEP_COOLDOWN_HOURS
+end
+
 local function onPlayerUpdate(playerObj, settings, logger)
     if not playerObj then
         return
@@ -346,7 +368,7 @@ local function onPlayerUpdate(playerObj, settings, logger)
         end
     end
 
-    if fatigue >= state.threshold then
+    if fatigue >= state.threshold and not hasRecentlySlept(playerObj) then
         stopRest(playerObj, state, logger, "threshold")
         activeByPlayer[idx] = nil
         return
