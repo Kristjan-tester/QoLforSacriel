@@ -28,7 +28,8 @@ Features:
     - Any item can be added manually to preset.
     - Remembers held weapons hand preference, and armour slots
     - No new visuals for hotbar - all is handled via right-click context menu at the moment
-- Armour discomfort reduction (95%) when not doing complex actions (running, climbing or building stuff, etc.)
+- Armour discomfort reduction (95%) when not doing complex actions (running, climbing, building stuff) or sleeping/resting
+	- Respects vanilla discomfort cap (sum of all worn items)
 - Find deeper natural water sources in foraging mode (choose target 'water')
 - Nudge furniture by 1 tile, can nudge multi-tile items and ignore tool/skill requirements:
     - Items have to be removed from containers before nudge. 
