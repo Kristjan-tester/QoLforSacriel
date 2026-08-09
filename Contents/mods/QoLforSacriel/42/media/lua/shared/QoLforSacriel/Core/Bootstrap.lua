@@ -33,6 +33,7 @@ local function registerModules()
     local soundRadius = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundRadius")
     local furnitureNudge = safeRequire("QoLforSacriel/Modules/FurnitureNudge/FurnitureNudge")
     local lightSwitchToggle = safeRequire("QoLforSacriel/Modules/LightSwitchToggle/LightSwitchToggle")
+    local vehicleHorn = safeRequire("QoLforSacriel/Modules/VehicleHorn/VehicleHorn")
     local dragDrop = safeRequire("QoLforSacriel/Modules/DragDrop/DragDropFatigue")
     local restSleep = safeRequire("QoLforSacriel/Modules/RestSleep/RestUntilSleepy")
     local equipmentPresets = safeRequire("QoLforSacriel/Modules/Equipment/EquipmentPresets")
@@ -70,6 +71,9 @@ local function registerModules()
     end
     if lightSwitchToggle and lightSwitchToggle.init then
         registry.register("LightSwitchToggle.Base", "QoLforSacriel_EnableLightSwitchToggle", lightSwitchToggle.init)
+    end
+    if vehicleHorn and vehicleHorn.init then
+        registry.register("UIFixes.ExteriorVehicleHorn", "QoLforSacriel_EnableUIFixes", vehicleHorn.init)
     end
     if dragDrop and dragDrop.init then
         registry.register("DragDrop.Fatigue", "QoLforSacriel_EnableDragDrop", dragDrop.init)

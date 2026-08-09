@@ -29,6 +29,8 @@
   "UI_QoLforSacriel_Modules_EnableUIFixes_Tooltip": "Turns the entire UI Fixes group on or off at runtime.",
   "UI_QoLforSacriel_Modules_EnableSkillFilter": "Enable Skill Filter Module",
   "UI_QoLforSacriel_Modules_EnableSkillFilter_Tooltip": "Shows the optional skill list filter in the character info panel.",
+  "UI_QoLforSacriel_Modules_EnableExteriorVehicleHorn": "Enable Exterior Vehicle Horn Module",
+  "UI_QoLforSacriel_Modules_EnableExteriorVehicleHorn_Tooltip": "Allows honking from the open or broken driver-side window using the vanilla horn key or vehicle radial menu.",
   "UI_QoLforSacriel_Modules_SkillFilterRecentMinutes": "Recent XP Window (ingame Minutes)",
   "UI_QoLforSacriel_Modules_SkillFilterRecentMinutes_Tooltip": "How long, in game minutes, a skill stays marked as recently trained. Default 60.",
   "UI_QoLforSacriel_Modules_SkillFilterMinFullLevel": "Skill Filter Minimum Full Level",

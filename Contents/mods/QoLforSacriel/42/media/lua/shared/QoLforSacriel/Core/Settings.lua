@@ -7,6 +7,7 @@ local defaults = {
 
     QoLforSacriel_EnableUIFixes = true,
     QoLforSacriel_UIFixes_EnableSkillFilter = true,
+    QoLforSacriel_UIFixes_EnableExteriorVehicleHorn = true,
     QoLforSacriel_EnableDragDrop = true,
     QoLforSacriel_EnableRestSleep = true,
     QoLforSacriel_EnableEquipment = true,
@@ -104,6 +105,7 @@ local MOD_OPTION_KEY_BY_SETTING = {
     QoLforSacriel_DebugLogs = "debugLogs",
     QoLforSacriel_EnableUIFixes = "enableUIFixes",
     QoLforSacriel_UIFixes_EnableSkillFilter = "enableSkillFilter",
+    QoLforSacriel_UIFixes_EnableExteriorVehicleHorn = "enableExteriorVehicleHorn",
     QoLforSacriel_UIFixes_SkillFilterRecentMinutes = "skillFilterRecentMinutes",
     QoLforSacriel_UIFixes_SkillFilterMinFullLevel = "skillFilterMinFullLevel",
     QoLforSacriel_UIFixes_EnableWaterDepthHints = "enableWaterDepthHints",

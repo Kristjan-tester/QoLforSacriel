@@ -509,7 +509,8 @@ function SoundOverlayRenderer.renderPlayerWorldSoundRing(playerObj, ring, nowMs,
         local textManager = getTextManager and getTextManager() or nil
         if textManager then
             local labelWidth = textManager:MeasureStringX(UIFont.Small, label)
-            textManager:DrawString(UIFont.Small, centerX - (labelWidth / 2), centerY - 18, label, 0.85, 1.0, 0.85, math.max(0.60, alpha))
+            local labelStackOffsetPx = math.max(0, tonumber(ring.labelStackOffsetPx) or 0)
+            textManager:DrawString(UIFont.Small, centerX - (labelWidth / 2), centerY - 18 - labelStackOffsetPx, label, 0.85, 1.0, 0.85, math.max(0.60, alpha))
         end
     end
 end

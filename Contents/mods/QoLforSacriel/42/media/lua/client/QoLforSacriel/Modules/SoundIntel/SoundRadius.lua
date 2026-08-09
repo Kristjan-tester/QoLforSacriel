@@ -11,6 +11,7 @@ local RING_COALESCE_MS = 200
 local RING_DEDUPE_MS = 250
 local MAX_RINGS_PER_REPEAT_SOURCE = 2
 local REPEAT_SOURCE_PROGRESS_THRESHOLD = 0.5
+local LABEL_STACK_SPACING_PX = 16
 
 local function nowMs()
     if getTimestampMs then
@@ -91,12 +92,58 @@ local function sourceRingState(sourceKey)
     return count, oldestIndex, newest
 end
 
+local function largestSourceRing(sourceKey)
+    local largest = nil
+
+    for index = 1, #rings do
+        local ring = rings[index]
+        if ring.repeatSourceKey == sourceKey and (not largest or ring.radius > largest.radius) then
+            largest = ring
+        end
+    end
+
+    return largest
+end
+
+local function removeSmallerSourceRings(sourceKey, radius)
+    for index = #rings, 1, -1 do
+        local ring = rings[index]
+        if ring.repeatSourceKey == sourceKey and ring.radius < radius then
+            table.remove(rings, index)
+        end
+    end
+end
+
 local function ringProgress(ring, now)
     if not ring then
         return 1
     end
     local lifeMs = math.max(1, ring.expiresAtMs - ring.createdAtMs)
     return math.min(1, math.max(0, (now - ring.createdAtMs) / lifeMs))
+end
+
+local function assignLabelStackOffsets()
+    local ringsBySource = {}
+
+    for index = 1, #rings do
+        local ring = rings[index]
+        ring.labelStackOffsetPx = 0
+        local sourceRings = ringsBySource[ring.repeatSourceKey]
+        if not sourceRings then
+            sourceRings = {}
+            ringsBySource[ring.repeatSourceKey] = sourceRings
+        end
+        table.insert(sourceRings, ring)
+    end
+
+    for _, sourceRings in pairs(ringsBySource) do
+        table.sort(sourceRings, function(first, second)
+            return first.createdAtMs > second.createdAtMs
+        end)
+        for index = 2, #sourceRings do
+            sourceRings[index].labelStackOffsetPx = (index - 1) * LABEL_STACK_SPACING_PX
+        end
+    end
 end
 
 local function createRing(x, y, z, radius, volume, now, resolved, origin, synthetic, sourceKey)
@@ -149,6 +196,16 @@ local function queueRing(playerObj, x, y, z, radius, volume, resolved, logger, d
             logRing(logger, debugEnabled, playerObj, x, y, z, rawRadius, volume, origin, synthetic, "updated-coalesced-ring")
         end
         return
+    end
+
+    local largestRing = largestSourceRing(sourceKey)
+    if largestRing and rawRadius < largestRing.radius then
+        logRing(logger, debugEnabled, playerObj, x, y, z, rawRadius, volume, origin, synthetic, "suppressed-lower-radius-source-ring")
+        return
+    end
+    if largestRing and rawRadius > largestRing.radius then
+        removeSmallerSourceRings(sourceKey, rawRadius)
+        logRing(logger, debugEnabled, playerObj, x, y, z, rawRadius, volume, origin, synthetic, "replaced-lower-radius-source-rings")
     end
 
     local sourceRingCount, oldestSourceRingIndex, newestSourceRing = sourceRingState(sourceKey)
@@ -284,6 +341,7 @@ local function onPostRender(settings, logger)
     end
     local now = nowMs()
     prune(now)
+    assignLabelStackOffsets()
     for index = 1, #rings do
         local ok, err = pcall(function()
             renderer.renderPlayerWorldSoundRing(playerObj, rings[index], now, resolved)
