@@ -572,37 +572,28 @@ local function buildToolSelections(variableToolInputScripts, candidateMap, fixed
 end
 
 local function applyToolSelectionToLogic(logic, toolSelection)
-    if not logic or not toolSelection then
+    if not logic or not toolSelection or #toolSelection == 0 then
         return false
     end
 
-    local recipeData = logic:getRecipeData()
-    if not recipeData then
+    local okManualMode = safeCallMethod(logic, "setManualSelectInputs", true)
+    if not okManualMode then
         return false
     end
 
-    for i = 1, #toolSelection do
-        local inputScript = toolSelection[i].inputScript
-        local inputScriptData = recipeData:getDataForInputScript(inputScript)
-        if inputScriptData then
-            while inputScriptData:getLastInputItem() do
-                inputScriptData:removeInputItem(inputScriptData:getLastInputItem())
-            end
-        end
-    end
-
-    local appliedAny = false
-    for i = 1, #toolSelection do
-        local success = recipeData:offerInputItem(toolSelection[i].inputScript, toolSelection[i].item, false)
-        if success then
-            appliedAny = true
-        else
-            logDebug("failed to apply chosen tool '" .. getItemDisplayName(toolSelection[i].item) .. "'")
+    for selectionIndex = 1, #toolSelection do
+        local selection = toolSelection[selectionIndex]
+        local selectedItems = ArrayList.new()
+        selectedItems:add(selection.item)
+        local okSetInputs, inputsSatisfied = safeCallMethod(logic, "setManualInputsFor", selection.inputScript, selectedItems)
+        if not okSetInputs or inputsSatisfied ~= true then
+            logDebug("failed to apply chosen tool '" .. getItemDisplayName(selection.item) .. "'")
             return false
         end
     end
 
-    return appliedAny
+    safeCallMethod(logic, "canPerformCurrentRecipe")
+    return true
 end
 
 local function decorateOption(option, recipeTexture, selectedItem)
@@ -644,31 +635,18 @@ local function attachRecipeTooltip(option, playerObj, recipe, logic, recipeTextu
     option.toolTip = tooltip
 end
 
-local function attachChildSelectionTooltip(option, recipe, selectedItem, toolSelection)
-    if not option or not recipe or not toolSelection then
+local function attachChildSelectionTooltip(option, playerObj, containers, recipe, selectedItem, toolSelection, recipeTexture)
+    if not option or not playerObj or not recipe or not toolSelection then
         return
     end
 
-    local tooltip = nil
-    if ISInventoryPaneContextMenu and type(ISInventoryPaneContextMenu.addToolTip) == "function" then
-        tooltip = ISInventoryPaneContextMenu.addToolTip()
-    else
-        tooltip = ISToolTip:new()
-    end
-
-    if not tooltip then
+    local logic = createRecipeLogic(playerObj, containers, recipe, selectedItem)
+    if not logic or not applyToolSelectionToLogic(logic, toolSelection) then
+        logDebug("failed to build full tooltip logic for selected tool entry")
         return
     end
 
-    tooltip:setName(recipe:getTranslationName())
-    tooltip.description = buildToolSelectionTooltipDescription(selectedItem, toolSelection)
-
-    local selectionTexture = getFirstSelectionTexture(toolSelection)
-    if selectionTexture and tooltip.setTextureDirectly then
-        tooltip:setTextureDirectly(selectionTexture)
-    end
-
-    option.toolTip = tooltip
+    attachRecipeTooltip(option, playerObj, recipe, logic, recipeTexture, toolSelection)
 end
 
 local getMatchingItemCountByFamilyKey
@@ -1273,15 +1251,15 @@ local function patchInventoryPaneContextMenu()
 
                         local oneOption = amountMenu:addOption(getCraftAmountLabel("one"), selectedItem, onCraftWithToolSelection, recipe, player, false, nil, toolSelection, rootContext)
                         decorateOption(oneOption, toolTexture, nil)
-                        attachChildSelectionTooltip(oneOption, recipe, selectedItem, toolSelection)
+                        attachChildSelectionTooltip(oneOption, playerObj, containers, recipe, selectedItem, toolSelection, recipeTexture)
 
                         local allOption = amountMenu:addOption(getCraftAmountLabel("all"), selectedItem, onCraftWithToolSelection, recipe, player, true, nil, toolSelection, rootContext)
                         decorateOption(allOption, toolTexture, nil)
-                        attachChildSelectionTooltip(allOption, recipe, selectedItem, toolSelection)
+                        attachChildSelectionTooltip(allOption, playerObj, containers, recipe, selectedItem, toolSelection, recipeTexture)
                     else
                         local childOption = toolMenu:addOption(selectionLabel, selectedItem, onCraftWithToolSelection, recipe, player, false, nil, toolSelection, rootContext)
                         decorateOption(childOption, toolTexture, nil)
-                        attachChildSelectionTooltip(childOption, recipe, selectedItem, toolSelection)
+                        attachChildSelectionTooltip(childOption, playerObj, containers, recipe, selectedItem, toolSelection, recipeTexture)
                     end
                 end
             else

@@ -1379,7 +1379,7 @@ local function togglePreset(playerObj, presetIndex, logger)
     end
 
     local state = evaluatePresetState(playerObj, presetIndex)
-    local unequip = state.hasAny and state.allEquipped
+    local unequip = state.hasAny and (state.allEquipped or isPresetMarkedEquipped(playerObj, presetIndex))
     if logger and logger.debug then
         logger.debug("Equipment preset " .. tostring(presetIndex) .. " state: total=" .. tostring(state.total) .. ", equipped=" .. tostring(state.equipped) .. ", allEquipped=" .. tostring(state.allEquipped) .. ", mode=" .. (unequip and "unequip" or "equip"))
     end
@@ -1401,6 +1401,7 @@ local function togglePreset(playerObj, presetIndex, logger)
             if ok then
                 changed = changed + 1
             elseif not unequip then
+                missingOnEquip = missingOnEquip + 1
                 logger.debug("Equipment preset " .. tostring(presetIndex) .. " equip miss: type=" .. tostring(fullType) .. ", handMode=" .. tostring(handMode))
             end
         end

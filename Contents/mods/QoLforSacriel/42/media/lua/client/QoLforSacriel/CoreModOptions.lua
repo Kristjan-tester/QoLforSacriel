@@ -266,9 +266,18 @@ local function syncLightSwitchToggleBinding(options, logger)
     syncPresetBindingFromOption("lightSwitchToggleHotkey", options:getOption("lightSwitchToggleHotkey"), getText("UI_QoLforSacriel_Modules_LightSwitchToggleHotkey"), Keyboard.KEY_F, logger)
 end
 
+local function syncNearbyDeviceOffBinding(options, logger)
+    if not options or not options.getOption then
+        return
+    end
+
+    syncPresetBindingFromOption("nearbyDeviceOffHotkey", options:getOption("nearbyDeviceOffHotkey"), getText("UI_QoLforSacriel_Modules_NearbyDeviceOffHotkey"), Keyboard.KEY_G, logger)
+end
+
 local function syncAllBindings(options, logger)
     syncPresetBindings(options, logger)
     syncLightSwitchToggleBinding(options, logger)
+    syncNearbyDeviceOffBinding(options, logger)
 end
 
 local function notifyApplyListeners()
@@ -509,6 +518,19 @@ function CoreModOptions.register(logger)
     end
 
     options:addTickBox("lightSwitchToggleRequireSameRoom", "UI_QoLforSacriel_Modules_LightSwitchToggleRequireSameRoom", true, "UI_QoLforSacriel_Modules_LightSwitchToggleRequireSameRoom_Tooltip")
+
+    options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_NearbyDeviceOffTitle")
+    options:addTickBox("enableNearbyDeviceOff", "UI_QoLforSacriel_Modules_EnableNearbyDeviceOff", true, "UI_QoLforSacriel_Modules_EnableNearbyDeviceOff_Tooltip")
+    local nearbyDeviceOffHotkeyName = getText("UI_QoLforSacriel_Modules_NearbyDeviceOffHotkey")
+    local nearbyDeviceOffHotkey = options:addKeyBind("nearbyDeviceOffHotkey", nearbyDeviceOffHotkeyName, Keyboard.KEY_G, "UI_QoLforSacriel_Modules_NearbyDeviceOffHotkey_Tooltip")
+    nearbyDeviceOffHotkey.ctrl = true
+    nearbyDeviceOffHotkey.shift = false
+    nearbyDeviceOffHotkey.alt = false
+    local nearbyDeviceOffRangeOption = options:addComboBox("nearbyDeviceOffRange", "UI_QoLforSacriel_Modules_NearbyDeviceOffRange", "UI_QoLforSacriel_Modules_NearbyDeviceOffRange_Tooltip")
+    for i = 1, 3 do
+        nearbyDeviceOffRangeOption:addItem("UI_QoLforSacriel_Modules_NearbyDeviceOffRange_" .. tostring(i), i == 3)
+    end
 
     options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_CharacterSystemsTitle")

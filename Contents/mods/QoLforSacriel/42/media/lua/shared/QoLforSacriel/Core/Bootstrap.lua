@@ -33,6 +33,7 @@ local function registerModules()
     local soundRadius = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundRadius")
     local furnitureNudge = safeRequire("QoLforSacriel/Modules/FurnitureNudge/FurnitureNudge")
     local lightSwitchToggle = safeRequire("QoLforSacriel/Modules/LightSwitchToggle/LightSwitchToggle")
+    local nearbyDeviceOff = safeRequire("QoLforSacriel/Modules/NearbyDeviceOff/NearbyDeviceOff")
     local vehicleHorn = safeRequire("QoLforSacriel/Modules/VehicleHorn/VehicleHorn")
     local dragDrop = safeRequire("QoLforSacriel/Modules/DragDrop/DragDropFatigue")
     local restSleep = safeRequire("QoLforSacriel/Modules/RestSleep/RestUntilSleepy")
@@ -71,6 +72,9 @@ local function registerModules()
     end
     if lightSwitchToggle and lightSwitchToggle.init then
         registry.register("LightSwitchToggle.Base", "QoLforSacriel_EnableLightSwitchToggle", lightSwitchToggle.init)
+    end
+    if nearbyDeviceOff and nearbyDeviceOff.init then
+        registry.register("NearbyDeviceOff.Base", "QoLforSacriel_EnableNearbyDeviceOff", nearbyDeviceOff.init)
     end
     if vehicleHorn and vehicleHorn.init then
         registry.register("UIFixes.ExteriorVehicleHorn", "QoLforSacriel_EnableUIFixes", vehicleHorn.init)
