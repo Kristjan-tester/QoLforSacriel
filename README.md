@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.81
+Current version: v0.9
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -21,13 +21,19 @@ Features:
     - UPDATED to include world objects (excluding zombies and animals). 
   
 - Audio direction visualiser (default off), Customisable categories for sounds groups to track, fps drop fixed (let me know if you experience it).
-- Filter skills list to hide 0xp skills
-- Rest until sleepy, speeds up time until player can sleep again (ignores panic or pain limits to sleep)
+- Filter skills panel, on the fly:
+	- highlights recently improved skills with 'green' texts, within last 60 in-game minutes (by default)
+	- filter to hide 0xp skills
+	- filter to hide all below 2 levels of skill (by default) - still shows recent skills even if below that limit
+- Rest until sleepy, speeds up time until player can sleep:
+	- respects going to sleep again limit even if player is tired enough to sleep
+	- does not take panic or pain limits into account
 - Dragging corpses exhaustion rate ramps up from 35% to vanilla over time (120 sec)
 - Armour presets (1..8, default 2) with custom key-binds (default: ctrl+F1..8) and 'add all current armour/weapons' function:
     - Any item can be added manually to preset.
     - Remembers held weapons hand preference, and armour slots
     - No new visuals for hotbar - all is handled via right-click context menu at the moment
+    - can be renamed in modoptions (up to 24 characters shows in context menu)
 - Armour discomfort reduction (95%) when not doing complex actions (running, climbing, building stuff) or sleeping/resting
 	- Respects vanilla discomfort cap (sum of all worn items)
 - Find deeper natural water sources in foraging mode (choose target 'water')
