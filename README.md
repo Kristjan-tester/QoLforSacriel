@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.9
+Current version: v0.10
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -18,8 +18,10 @@ Features:
     - Zombies can hear sounds outside of that range (depending on their hearing: 0.45x ; 1x; 3x range)
     - Game does not generate sounds that one would expect - opening doors, using microwave, for example - testing all of them is tricky, let me know when you see inconsistencies. 
     - Footsteps only make sound with probability for example, and crouch walking and running is same loudness (probably bug in vanilla). 
-    - UPDATED to include world objects (excluding zombies and animals). 
-  
+    - UPDATED to include world objects (excluding zombies and animals).
+    - Audio rings with higher radius from same source have priority now, concurrent ring radius labels offset for visibility
+
+- Car horn can be honked from outside when door is open or window open/broken. Both radial menu and key-bind
 - Audio direction visualiser (default off), Customisable categories for sounds groups to track, fps drop fixed (let me know if you experience it).
 - Filter skills panel, on the fly:
 	- highlights recently improved skills with 'green' texts, within last 60 in-game minutes (by default)
