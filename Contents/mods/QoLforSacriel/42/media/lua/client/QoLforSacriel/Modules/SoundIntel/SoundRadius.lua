@@ -2,14 +2,15 @@ local SoundRadius = {}
 
 local renderer = require "QoLforSacriel/Modules/SoundIntel/SoundOverlayRenderer"
 local settingsProvider = require "QoLforSacriel/Modules/SoundIntel/SoundRadiusSettingsProvider"
+local runtimeSettings = require "QoLforSacriel/Modules/SoundIntel/SoundRuntimeSettings"
 local modOptions = require "QoLforSacriel/Modules/SoundIntel/SoundRadiusModOptions"
 
 local installed = false
 local rings = {}
 local RING_COALESCE_MS = 200
 local RING_DEDUPE_MS = 250
-local NULL_SOURCE_MAX_DISTANCE = 2.5
-local NULL_SOURCE_MAX_RADIUS = 20
+local MAX_RINGS_PER_REPEAT_SOURCE = 2
+local REPEAT_SOURCE_PROGRESS_THRESHOLD = 0.5
 
 local function nowMs()
     if getTimestampMs then
@@ -18,9 +19,9 @@ local function nowMs()
     return math.floor((getTimestamp() or 0) * 1000)
 end
 
-local function isRuntimeEnabled(settings, resolved)
-    return settings.isEnabled() == true
-        and settings.get("QoLforSacriel_UIFixes_EnableNoiseRadius") == true
+local function isRuntimeEnabled(gates, resolved)
+    return gates and gates.enabled == true
+        and gates.soundRadiusEnabled == true
         and resolved.enabled == true
 end
 
@@ -44,7 +45,10 @@ local function localPlayerName(playerObj)
     return "local-player"
 end
 
-local function logRing(logger, playerObj, x, y, z, radius, volume, origin, synthetic, outcome)
+local function logRing(logger, debugEnabled, playerObj, x, y, z, radius, volume, origin, synthetic, outcome)
+    if not debugEnabled then
+        return
+    end
     logger.debug(
         "SoundRadius ring: origin=" .. tostring(origin)
         .. ", synthetic=" .. tostring(synthetic == true)
@@ -56,7 +60,46 @@ local function logRing(logger, playerObj, x, y, z, radius, volume, origin, synth
     )
 end
 
-local function createRing(x, y, z, radius, volume, now, resolved, origin, synthetic)
+local function repeatSourceKey(source, x, y, z, origin)
+    if source ~= nil then
+        return source
+    end
+    return "null:" .. tostring(origin)
+        .. ":" .. tostring(math.floor(tonumber(x) or 0))
+        .. ":" .. tostring(math.floor(tonumber(y) or 0))
+        .. ":" .. tostring(math.floor(tonumber(z) or 0))
+end
+
+local function sourceRingState(sourceKey)
+    local count = 0
+    local oldestIndex = nil
+    local newest = nil
+
+    for index = 1, #rings do
+        local ring = rings[index]
+        if ring.repeatSourceKey == sourceKey then
+            count = count + 1
+            if oldestIndex == nil or ring.createdAtMs < rings[oldestIndex].createdAtMs then
+                oldestIndex = index
+            end
+            if newest == nil or ring.createdAtMs > newest.createdAtMs then
+                newest = ring
+            end
+        end
+    end
+
+    return count, oldestIndex, newest
+end
+
+local function ringProgress(ring, now)
+    if not ring then
+        return 1
+    end
+    local lifeMs = math.max(1, ring.expiresAtMs - ring.createdAtMs)
+    return math.min(1, math.max(0, (now - ring.createdAtMs) / lifeMs))
+end
+
+local function createRing(x, y, z, radius, volume, now, resolved, origin, synthetic, sourceKey)
     return {
         x = x,
         y = y,
@@ -65,12 +108,13 @@ local function createRing(x, y, z, radius, volume, now, resolved, origin, synthe
         volume = volume,
         origin = origin,
         synthetic = synthetic == true,
+        repeatSourceKey = sourceKey,
         createdAtMs = now,
         expiresAtMs = now + resolved.ringDurationMs,
     }
 end
 
-local function queueRing(playerObj, x, y, z, radius, volume, resolved, logger, origin, synthetic)
+local function queueRing(playerObj, x, y, z, radius, volume, resolved, logger, debugEnabled, origin, synthetic, source)
     local rawRadius = math.floor(tonumber(radius) or 0)
     if rawRadius <= 0 then
         return
@@ -78,38 +122,49 @@ local function queueRing(playerObj, x, y, z, radius, volume, resolved, logger, o
 
     local now = nowMs()
     prune(now)
+    local sourceKey = repeatSourceKey(source, x, y, z, origin)
     local newest = rings[#rings]
     local ageMs = newest and now - newest.createdAtMs or nil
 
-    if newest and ageMs <= RING_DEDUPE_MS and newest.synthetic ~= synthetic then
+    if newest and newest.repeatSourceKey == sourceKey and ageMs <= RING_DEDUPE_MS and newest.synthetic ~= synthetic then
         if synthetic then
             if rawRadius > newest.radius then
                 newest.radius = rawRadius
                 newest.volume = math.max(tonumber(newest.volume) or 0, tonumber(volume) or 0)
                 newest.expiresAtMs = now + resolved.ringDurationMs
-                logRing(logger, playerObj, x, y, z, rawRadius, volume, origin, synthetic, "expanded-observed-ring")
+                logRing(logger, debugEnabled, playerObj, x, y, z, rawRadius, volume, origin, synthetic, "expanded-observed-ring")
             end
             return
         end
 
-        rings[#rings] = createRing(x, y, z, math.max(rawRadius, newest.radius), math.max(tonumber(volume) or 0, tonumber(newest.volume) or 0), now, resolved, origin, false)
-        logRing(logger, playerObj, x, y, z, rawRadius, volume, origin, false, "replaced-synthetic-ring")
+        rings[#rings] = createRing(x, y, z, math.max(rawRadius, newest.radius), math.max(tonumber(volume) or 0, tonumber(newest.volume) or 0), now, resolved, origin, false, sourceKey)
+        logRing(logger, debugEnabled, playerObj, x, y, z, rawRadius, volume, origin, false, "replaced-synthetic-ring")
         return
     end
 
-    if newest and newest.synthetic == synthetic and ageMs <= RING_COALESCE_MS then
+    if newest and newest.repeatSourceKey == sourceKey and newest.synthetic == synthetic and ageMs <= RING_COALESCE_MS then
         if rawRadius >= newest.radius then
-            rings[#rings] = createRing(x, y, z, rawRadius, volume, now, resolved, origin, synthetic)
-            logRing(logger, playerObj, x, y, z, rawRadius, volume, origin, synthetic, "replaced-coalesced-ring")
+            newest.radius = rawRadius
+            newest.volume = math.max(tonumber(newest.volume) or 0, tonumber(volume) or 0)
+            logRing(logger, debugEnabled, playerObj, x, y, z, rawRadius, volume, origin, synthetic, "updated-coalesced-ring")
         end
         return
     end
 
-    table.insert(rings, createRing(x, y, z, rawRadius, volume, now, resolved, origin, synthetic))
+    local sourceRingCount, oldestSourceRingIndex, newestSourceRing = sourceRingState(sourceKey)
+    if newestSourceRing and ringProgress(newestSourceRing, now) < REPEAT_SOURCE_PROGRESS_THRESHOLD then
+        logRing(logger, debugEnabled, playerObj, x, y, z, rawRadius, volume, origin, synthetic, "suppressed-repeat-source-halfway")
+        return
+    end
+    if sourceRingCount >= MAX_RINGS_PER_REPEAT_SOURCE and oldestSourceRingIndex then
+        table.remove(rings, oldestSourceRingIndex)
+    end
+
+    table.insert(rings, createRing(x, y, z, rawRadius, volume, now, resolved, origin, synthetic, sourceKey))
     while #rings > resolved.maxActiveRings do
         table.remove(rings, 1)
     end
-    logRing(logger, playerObj, x, y, z, rawRadius, volume, origin, synthetic, "queued")
+    logRing(logger, debugEnabled, playerObj, x, y, z, rawRadius, volume, origin, synthetic, "queued")
 end
 
 local function isLocalPlayerSource(source, playerObj)
@@ -128,21 +183,27 @@ local function isLocalPlayerSource(source, playerObj)
     return ok and localPlayer == true, ok and "isLocalPlayer" or "non-local-player"
 end
 
+local function isEligibleWorldObjectSource(source)
+    if source == nil then
+        return false, "null-source"
+    end
+    if instanceof and instanceof(source, "IsoPlayer") then
+        return false, "player-source"
+    end
+    if instanceof and instanceof(source, "IsoZombie") then
+        return false, "zombie-source"
+    end
+    if instanceof and instanceof(source, "IsoAnimal") then
+        return false, "animal-source"
+    end
+    return true, "world-object"
+end
+
 local function isNearbyNullSource(x, y, z, radius, source, playerObj)
-    if source ~= nil or not playerObj then
+    if source ~= nil then
         return false, "not-null-source"
     end
-    local rawRadius = tonumber(radius) or 0
-    if rawRadius <= 0 or rawRadius > NULL_SOURCE_MAX_RADIUS then
-        return false, "null-source-radius-out-of-range"
-    end
-    if z ~= nil and math.floor(playerObj:getZ()) ~= math.floor(z) then
-        return false, "null-source-different-z"
-    end
-    if IsoUtils.DistanceTo(playerObj:getX(), playerObj:getY(), x, y) > NULL_SOURCE_MAX_DISTANCE then
-        return false, "null-source-too-far"
-    end
-    return true, "nearby-null-source"
+    return true, "null-source"
 end
 
 local function movementStateText(playerObj)
@@ -165,41 +226,55 @@ local function movementStateText(playerObj)
         .. ", sprinting=" .. tostring(readState("isSprinting"))
 end
 
-local function logWorldSound(logger, x, y, z, radius, volume, source, runtimeEnabled, matched, matchMethod)
-    local movementState = matched and movementStateText(getPlayer()) or nil
+local function logWorldSound(logger, debugEnabled, x, y, z, radius, volume, source, disposition, isLocalSource)
+    if not debugEnabled then
+        return
+    end
+    local movementState = isLocalSource and movementStateText(getPlayer()) or nil
     logger.debug(
         "SoundRadius OnWorldSound received: source=" .. tostring(source)
         .. ", range=" .. tostring(radius)
         .. ", volume=" .. tostring(volume)
         .. ", at=" .. tostring(x) .. "," .. tostring(y) .. "," .. tostring(z)
-        .. ", runtimeEnabled=" .. tostring(runtimeEnabled == true)
-        .. ", localPlayerMatch=" .. tostring(matched == true)
-        .. ", matchMethod=" .. tostring(matchMethod)
+        .. ", sourceDisposition=" .. tostring(disposition)
+        .. ", localPlayerMatch=" .. tostring(isLocalSource == true)
         .. (movementState and ", " .. movementState or "")
     )
 end
 
 local function onWorldSound(x, y, z, radius, volume, source, settings, logger)
-    local resolved = settingsProvider.get(settings)
-    local runtimeEnabled = isRuntimeEnabled(settings, resolved)
-    local playerObj = getPlayer()
-    local isLocalSource, matchMethod = isLocalPlayerSource(source, playerObj)
-    local isNearbyNull, nullMethod = isNearbyNullSource(x, y, z, radius, source, playerObj)
-    local outcome = isLocalSource and matchMethod or nullMethod
+    local gates = runtimeSettings.getCached(settings, logger)
+    if not gates or gates.enabled ~= true or gates.soundRadiusEnabled ~= true then
+        return
+    end
+    local resolved = settingsProvider.getCached(settings)
+    local runtimeEnabled = isRuntimeEnabled(gates, resolved)
     if not runtimeEnabled then
         return
     end
-    logWorldSound(logger, x, y, z, radius, volume, source, runtimeEnabled, isLocalSource, outcome)
+    local playerObj = getPlayer()
+    local isLocalSource, matchMethod = isLocalPlayerSource(source, playerObj)
+    local isWorldObject, objectMethod = isEligibleWorldObjectSource(source)
+    local isNearbyNull, nullMethod = isNearbyNullSource(x, y, z, radius, source, playerObj)
+    local disposition = isLocalSource and matchMethod or (isWorldObject and objectMethod or (isNearbyNull and nullMethod or objectMethod))
+    logWorldSound(logger, gates.debugEnabled, x, y, z, radius, volume, source, disposition, isLocalSource)
     if isLocalSource then
-        queueRing(playerObj, x, y, z, radius, volume, resolved, logger, "observed-player-world-sound", false)
+        queueRing(playerObj, x, y, z, radius, volume, resolved, logger, gates.debugEnabled, "observed-player-world-sound", false, source)
+    elseif isWorldObject then
+        queueRing(playerObj, x, y, z, radius, volume, resolved, logger, gates.debugEnabled, "observed-world-object-sound", false, source)
     elseif isNearbyNull then
-        queueRing(playerObj, x, y, z, radius, volume, resolved, logger, "nearby-null-source-world-sound", true)
+        queueRing(playerObj, x, y, z, radius, volume, resolved, logger, gates.debugEnabled, "observed-null-source-world-sound", false, source)
     end
 end
 
 local function onPostRender(settings, logger)
-    local resolved = settingsProvider.get(settings)
-    if not isRuntimeEnabled(settings, resolved) then
+    local gates = runtimeSettings.getCached(settings, logger)
+    if not gates or gates.enabled ~= true or gates.soundRadiusEnabled ~= true then
+        rings = {}
+        return
+    end
+    local resolved = settingsProvider.getCached(settings)
+    if not isRuntimeEnabled(gates, resolved) then
         rings = {}
         return
     end
@@ -223,7 +298,15 @@ function SoundRadius.init(settings, logger)
     if installed then
         return
     end
-    modOptions.register(logger)
+    runtimeSettings.init(settings, logger)
+    modOptions.register(logger, function()
+        settingsProvider.refresh(settings)
+        local gates = runtimeSettings.getCached(settings, logger)
+        if gates and gates.debugEnabled then
+            logger.debug("Noise Radius options cache refreshed from Mod Options")
+        end
+    end)
+    settingsProvider.refresh(settings)
     if not Events.OnWorldSound and LuaEventManager and LuaEventManager.AddEvent then
         LuaEventManager.AddEvent("OnWorldSound")
     end

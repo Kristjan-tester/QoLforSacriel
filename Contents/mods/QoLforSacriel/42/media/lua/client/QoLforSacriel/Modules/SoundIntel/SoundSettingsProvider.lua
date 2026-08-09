@@ -1,5 +1,6 @@
 local SoundSettingsProvider = {}
 local MOD_OPTIONS_ID = "QoLforSacriel.SoundIntel"
+local cached = nil
 
 local DEFAULTS = {
     QoLforSacriel_SoundIntel_Enabled = false,
@@ -121,7 +122,7 @@ local function resolveValue(settings, settingKey)
     return DEFAULTS[settingKey]
 end
 
-function SoundSettingsProvider.get(settings)
+local function resolveSettings(settings)
     local out = {}
 
     out.enabled = resolveValue(settings, "QoLforSacriel_SoundIntel_Enabled") == true
@@ -149,6 +150,22 @@ function SoundSettingsProvider.get(settings)
     out.categoryInferred = resolveValue(settings, "QoLforSacriel_SoundIntel_Category_Inferred") == true
 
     return out
+end
+
+function SoundSettingsProvider.refresh(settings)
+    cached = resolveSettings(settings)
+    return cached
+end
+
+function SoundSettingsProvider.getCached(settings)
+    if cached == nil then
+        return SoundSettingsProvider.refresh(settings)
+    end
+    return cached
+end
+
+function SoundSettingsProvider.get(settings)
+    return SoundSettingsProvider.getCached(settings)
 end
 
 return SoundSettingsProvider

@@ -3,6 +3,7 @@ local SoundDirection = {}
 local classifier = require "QoLforSacriel/Modules/SoundIntel/SoundEventClassifier"
 local renderer = nil
 local settingsProvider = require "QoLforSacriel/Modules/SoundIntel/SoundSettingsProvider"
+local runtimeSettings = require "QoLforSacriel/Modules/SoundIntel/SoundRuntimeSettings"
 local modOptions = require "QoLforSacriel/Modules/SoundIntel/SoundModOptions"
 QoLforSacriel_SoundIntel_Debug = QoLforSacriel_SoundIntel_Debug or {}
 
@@ -10,6 +11,7 @@ local installed = false
 local cues = {}
 local AMBIENT_CORRELATION_WINDOW_MS = 900
 local AMBIENT_CORRELATION_DISTANCE = 10
+local WORLD_CUE_COALESCE_MS = 200
 local INFERRED_ANIMAL_SCAN_INTERVAL_MS = 900
 local INFERRED_ANIMAL_SCAN_RADIUS = 22
 local INFERRED_ANIMAL_MAX_PER_SCAN = 4
@@ -18,11 +20,11 @@ local nextAnimalScanAtMs = 0
 local rendererUnavailableLogged = false
 local DEBUG_META_TEST_HOLD_MS = 5000
 
-local function isSoundDirectionRuntimeEnabled(settings, resolved)
-    if settings.isEnabled() ~= true then
+local function isSoundDirectionRuntimeEnabled(gates, resolved)
+    if not gates or gates.enabled ~= true then
         return false
     end
-    if settings.get("QoLforSacriel_UIFixes_EnableSoundDirection") ~= true then
+    if gates.soundDirectionEnabled ~= true then
         return false
     end
     return resolved.enabled == true
@@ -184,6 +186,28 @@ local function pruneExpired(nowMs)
     end
 end
 
+local function repeatSourceKey(source, x, y, z)
+    if source ~= nil then
+        return source
+    end
+    return "world:" .. tostring(math.floor(tonumber(x) or 0))
+        .. ":" .. tostring(math.floor(tonumber(y) or 0))
+        .. ":" .. tostring(math.floor(tonumber(z) or 0))
+end
+
+local function newestWorldCueForSource(sourceKey)
+    local newest = nil
+    for index = 1, #cues do
+        local cue = cues[index]
+        if cue.feed == "world" and cue.repeatSourceKey == sourceKey
+            and (newest == nil or cue.createdAtMs > newest.createdAtMs)
+        then
+            newest = cue
+        end
+    end
+    return newest
+end
+
 local function isIgnoredSource(source, playerObj)
     if not source or not playerObj then
         return false
@@ -204,7 +228,7 @@ local function isIgnoredSource(source, playerObj)
     return false
 end
 
-local function addWorldCue(x, y, z, radius, volume, source, resolved, logger)
+local function addWorldCue(x, y, z, radius, volume, source, resolved, logger, debugEnabled)
     local playerObj = getPlayer()
     if not playerObj then
         return
@@ -238,6 +262,25 @@ local function addWorldCue(x, y, z, radius, volume, source, resolved, logger)
     local nowMs = getNowMs()
 
     pruneExpired(nowMs)
+    local sourceKey = repeatSourceKey(source, x, y, z)
+    local newest = newestWorldCueForSource(sourceKey)
+    if newest and nowMs - newest.createdAtMs <= WORLD_CUE_COALESCE_MS then
+        newest.x = x
+        newest.y = y
+        newest.z = z
+        newest.hasZ = z ~= nil
+        newest.radius = math.max(tonumber(newest.radius) or 0, tonumber(radius) or 0)
+        newest.volume = math.max(tonumber(newest.volume) or 0, tonumber(volume) or 0)
+        newest.adjustedRadius = math.max(tonumber(newest.adjustedRadius) or 0, detectRadius)
+        newest.distance = distance
+        newest.outsideHearing = outsideHearing
+        if debugEnabled and logger then
+            logger.debug("SoundIntel updated-coalesced-world-cue: cat=" .. tostring(classification.category)
+                .. ", dist=" .. tostring(math.floor(distance))
+                .. ", rad=" .. tostring(math.floor(detectRadius)))
+        end
+        return
+    end
 
     table.insert(cues, {
         x = x,
@@ -254,6 +297,7 @@ local function addWorldCue(x, y, z, radius, volume, source, resolved, logger)
         category = classification.category,
         isMeta = classification.isMeta == true,
         feed = "world",
+        repeatSourceKey = sourceKey,
         confidence = "high",
         outsideHearing = outsideHearing,
         createdAtMs = nowMs,
@@ -262,8 +306,10 @@ local function addWorldCue(x, y, z, radius, volume, source, resolved, logger)
 
     trimQueue(resolved.maxTrackedCues)
 
-    if logger then
-        logger.debug("SoundIntel cue added: cat=" .. tostring(classification.category) .. ", dist=" .. tostring(math.floor(distance)) .. ", rad=" .. tostring(math.floor(detectRadius)))
+    if debugEnabled and logger then
+        logger.debug("SoundIntel queued-world-cue: cat=" .. tostring(classification.category)
+            .. ", dist=" .. tostring(math.floor(distance))
+            .. ", rad=" .. tostring(math.floor(detectRadius)))
     end
 end
 
@@ -291,7 +337,7 @@ local function findAmbientCorrelation(x, y, nowMs)
     return best
 end
 
-local function addAmbientCue(name, x, y, resolved, logger)
+local function addAmbientCue(name, x, y, resolved, logger, debugEnabled, durationMs)
     local playerObj = getPlayer()
     if not playerObj then
         return
@@ -361,17 +407,17 @@ local function addAmbientCue(name, x, y, resolved, logger)
         confidence = confidence,
         outsideHearing = outsideHearing,
         createdAtMs = nowMs,
-        expiresAtMs = nowMs + resolved.cueDurationMs,
+        expiresAtMs = nowMs + (durationMs or resolved.cueDurationMs),
     })
 
     trimQueue(resolved.maxTrackedCues)
 
-    if logger then
+    if debugEnabled and logger then
         logger.debug("SoundIntel ambient cue added: name=" .. tostring(name) .. ", cat=" .. tostring(classification.category) .. ", corr=" .. tostring(correlated ~= nil))
     end
 end
 
-local function consumePendingMetaTest(resolved, logger)
+local function consumePendingMetaTest(resolved, logger, debugEnabled)
     local pending = QoLforSacriel_SoundIntel_Debug.pendingMetaTest
     if not pending or not pending.name then
         return
@@ -393,10 +439,7 @@ local function consumePendingMetaTest(resolved, logger)
     local x = playerObj:getX() + (math.cos(angle) * distance)
     local y = playerObj:getY() + (math.sin(angle) * distance)
 
-    local originalDuration = resolved.cueDurationMs
-    resolved.cueDurationMs = math.max(originalDuration, DEBUG_META_TEST_HOLD_MS)
-    addAmbientCue(pending.name, x, y, resolved, logger)
-    resolved.cueDurationMs = originalDuration
+    addAmbientCue(pending.name, x, y, resolved, logger, debugEnabled, math.max(resolved.cueDurationMs, DEBUG_META_TEST_HOLD_MS))
 
     QoLforSacriel_SoundIntel_Debug.pendingMetaTest = nil
 
@@ -405,7 +448,7 @@ local function consumePendingMetaTest(resolved, logger)
     end
 end
 
-local function addInferredZombieCue(zombie, resolved, logger)
+local function addInferredZombieCue(zombie, resolved, logger, debugEnabled)
     if resolved.enableInferredZombie ~= true then
         return
     end
@@ -464,12 +507,12 @@ local function addInferredZombieCue(zombie, resolved, logger)
         }
     end)
 
-    if logger then
+    if debugEnabled and logger then
         logger.debug("SoundIntel inferred zombie cue added: dist=" .. tostring(math.floor(dist)))
     end
 end
 
-local function addInferredAnimalCue(animal, resolved, logger)
+local function addInferredAnimalCue(animal, resolved, logger, debugEnabled)
     if resolved.enableInferredAnimal ~= true then
         return
     end
@@ -538,12 +581,12 @@ local function addInferredAnimalCue(animal, resolved, logger)
         }
     end)
 
-    if logger then
+    if debugEnabled and logger then
         logger.debug("SoundIntel inferred animal cue added: dist=" .. tostring(math.floor(dist)))
     end
 end
 
-local function sampleAnimalsForInferredCues(resolved, logger)
+local function sampleAnimalsForInferredCues(resolved, logger, debugEnabled)
     if resolved.enableInferredAnimal ~= true then
         return
     end
@@ -577,7 +620,7 @@ local function sampleAnimalsForInferredCues(resolved, logger)
                     for i = 0, moving:size() - 1 do
                         local obj = moving:get(i)
                         if obj and instanceof and instanceof(obj, "IsoAnimal") then
-                            addInferredAnimalCue(obj, resolved, logger)
+                            addInferredAnimalCue(obj, resolved, logger, debugEnabled)
                             emitted = emitted + 1
                             if emitted >= INFERRED_ANIMAL_MAX_PER_SCAN then
                                 return
@@ -591,13 +634,17 @@ local function sampleAnimalsForInferredCues(resolved, logger)
 end
 
 local function onWorldSound(x, y, z, radius, volume, source, settings, logger)
-    local resolved = settingsProvider.get(settings)
-    if not isSoundDirectionRuntimeEnabled(settings, resolved) then
+    local gates = runtimeSettings.getCached(settings, logger)
+    if not gates or gates.enabled ~= true or gates.soundDirectionEnabled ~= true then
+        return
+    end
+    local resolved = settingsProvider.getCached(settings)
+    if not isSoundDirectionRuntimeEnabled(gates, resolved) then
         return
     end
 
     local ok, err = pcall(function()
-        addWorldCue(x, y, z, radius, volume, source, resolved, logger)
+        addWorldCue(x, y, z, radius, volume, source, resolved, logger, gates.debugEnabled)
     end)
     if not ok and logger then
         logger.error("SoundIntel OnWorldSound error: " .. tostring(err))
@@ -605,13 +652,17 @@ local function onWorldSound(x, y, z, radius, volume, source, settings, logger)
 end
 
 local function onAmbientSound(name, x, y, settings, logger)
-    local resolved = settingsProvider.get(settings)
-    if not isSoundDirectionRuntimeEnabled(settings, resolved) then
+    local gates = runtimeSettings.getCached(settings, logger)
+    if not gates or gates.enabled ~= true or gates.soundDirectionEnabled ~= true then
+        return
+    end
+    local resolved = settingsProvider.getCached(settings)
+    if not isSoundDirectionRuntimeEnabled(gates, resolved) then
         return
     end
 
     local ok, err = pcall(function()
-        addAmbientCue(name, x, y, resolved, logger)
+        addAmbientCue(name, x, y, resolved, logger, gates.debugEnabled)
     end)
     if not ok and logger then
         logger.error("SoundIntel OnAmbientSound error: " .. tostring(err))
@@ -619,13 +670,17 @@ local function onAmbientSound(name, x, y, settings, logger)
 end
 
 local function onZombieUpdate(zombie, settings, logger)
-    local resolved = settingsProvider.get(settings)
-    if not isSoundDirectionRuntimeEnabled(settings, resolved) then
+    local gates = runtimeSettings.getCached(settings, logger)
+    if not gates or gates.enabled ~= true or gates.soundDirectionEnabled ~= true then
+        return
+    end
+    local resolved = settingsProvider.getCached(settings)
+    if not isSoundDirectionRuntimeEnabled(gates, resolved) then
         return
     end
 
     local ok, err = pcall(function()
-        addInferredZombieCue(zombie, resolved, logger)
+        addInferredZombieCue(zombie, resolved, logger, gates.debugEnabled)
     end)
     if not ok and logger then
         logger.error("SoundIntel OnZombieUpdate error: " .. tostring(err))
@@ -633,8 +688,13 @@ local function onZombieUpdate(zombie, settings, logger)
 end
 
 local function onPostRender(settings, logger)
-    local resolved = settingsProvider.get(settings)
-    if not isSoundDirectionRuntimeEnabled(settings, resolved) then
+    local gates = runtimeSettings.getCached(settings, logger)
+    if not gates or gates.enabled ~= true or gates.soundDirectionEnabled ~= true then
+        cues = {}
+        return
+    end
+    local resolved = settingsProvider.getCached(settings)
+    if not isSoundDirectionRuntimeEnabled(gates, resolved) then
         cues = {}
         return
     end
@@ -648,14 +708,14 @@ local function onPostRender(settings, logger)
     pruneExpired(nowMs)
 
     local okAnimals, errAnimals = pcall(function()
-        sampleAnimalsForInferredCues(resolved, logger)
+        sampleAnimalsForInferredCues(resolved, logger, gates.debugEnabled)
     end)
     if not okAnimals and logger then
         logger.error("SoundIntel inferred animal scan error: " .. tostring(errAnimals))
     end
 
     local okDebugMeta, errDebugMeta = pcall(function()
-        consumePendingMetaTest(resolved, logger)
+        consumePendingMetaTest(resolved, logger, gates.debugEnabled)
     end)
     if not okDebugMeta and logger then
         logger.error("SoundIntel meta test cue error: " .. tostring(errDebugMeta))
@@ -685,7 +745,15 @@ function SoundDirection.init(settings, logger)
         return
     end
 
-    modOptions.register(logger)
+    runtimeSettings.init(settings, logger)
+    modOptions.register(logger, function()
+        settingsProvider.refresh(settings)
+        local gates = runtimeSettings.getCached(settings, logger)
+        if gates and gates.debugEnabled then
+            logger.debug("Sound Direction options cache refreshed from Mod Options")
+        end
+    end)
+    settingsProvider.refresh(settings)
 
     if not Events.OnWorldSound and LuaEventManager and LuaEventManager.AddEvent then
         LuaEventManager.AddEvent("OnWorldSound")

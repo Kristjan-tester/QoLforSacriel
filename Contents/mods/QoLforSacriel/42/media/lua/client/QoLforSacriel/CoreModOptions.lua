@@ -1,6 +1,7 @@
 local CoreModOptions = {}
 local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
 local HOTKEY_NONE_TOKEN = "NONE"
+local applyListeners = {}
 
 local FKEY_TO_CODE = {
     F1 = Keyboard.KEY_F1,
@@ -270,6 +271,12 @@ local function syncAllBindings(options, logger)
     syncLightSwitchToggleBinding(options, logger)
 end
 
+local function notifyApplyListeners()
+    for index = 1, #applyListeners do
+        applyListeners[index]()
+    end
+end
+
 local function attachApplySync(options, logger)
     if not options or options._qolApplySyncAttached == true then
         return
@@ -281,9 +288,16 @@ local function attachApplySync(options, logger)
             previousApply(self)
         end
         syncAllBindings(self, logger)
+        notifyApplyListeners()
     end
 
     options._qolApplySyncAttached = true
+end
+
+function CoreModOptions.addApplyListener(listener)
+    if type(listener) == "function" then
+        table.insert(applyListeners, listener)
+    end
 end
 
 function CoreModOptions.syncKeybinds(logger)

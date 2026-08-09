@@ -1,5 +1,6 @@
 local SoundRadiusSettingsProvider = {}
 local MOD_OPTIONS_ID = "QoLforSacriel.SoundRadius"
+local cached = nil
 
 local DEFAULTS = {
     QoLforSacriel_SoundRadius_Enabled = false,
@@ -35,7 +36,7 @@ local function resolve(settings, setting)
     return settings.get(setting) ~= nil and settings.get(setting) or DEFAULTS[setting]
 end
 
-function SoundRadiusSettingsProvider.get(settings)
+local function resolveSettings(settings)
     local enabled = resolve(settings, "QoLforSacriel_SoundRadius_Enabled") == true
     return {
         enabled = enabled,
@@ -46,6 +47,22 @@ function SoundRadiusSettingsProvider.get(settings)
         playerWorldSoundRingCullingMarginPx = clamp(resolve(settings, "QoLforSacriel_SoundRadius_RingCullingMarginPx"), 0, 1024),
         showPlayerWorldSoundRadiusLabel = resolve(settings, "QoLforSacriel_SoundRadius_ShowRadiusLabel") == true,
     }
+end
+
+function SoundRadiusSettingsProvider.refresh(settings)
+    cached = resolveSettings(settings)
+    return cached
+end
+
+function SoundRadiusSettingsProvider.getCached(settings)
+    if cached == nil then
+        return SoundRadiusSettingsProvider.refresh(settings)
+    end
+    return cached
+end
+
+function SoundRadiusSettingsProvider.get(settings)
+    return SoundRadiusSettingsProvider.getCached(settings)
 end
 
 return SoundRadiusSettingsProvider
