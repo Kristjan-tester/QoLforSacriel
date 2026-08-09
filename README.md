@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.8 
+Current version: v0.81
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -16,11 +16,11 @@ Current version: v0.8
 Features:
 - Character Audio Rings - shows radius where the sounds travels when made. Important:
     - Zombies can hear sounds outside of that range (depending on their hearing: 0.45x ; 1x; 3x range)
-    - Game does not generate sounds that one would expect - opening doors, for example - testing all of them is tricky, let me know when you see inconsistencies. 
+    - Game does not generate sounds that one would expect - opening doors, using microwave, for example - testing all of them is tricky, let me know when you see inconsistencies. 
     - Footsteps only make sound with probability for example, and crouch walking and running is same loudness (probably bug in vanilla). 
-    - Currently limited to direct player sounds, so using microwave for example wouldn't generate a ring. Hitting a door with a weapon would.
+    - UPDATED to include world objects (excluding zombies and animals). 
   
-- Audio direction visualiser (default off), Customisable categories for sounds groups to track, fps drop fixed.
+- Audio direction visualiser (default off), Customisable categories for sounds groups to track, fps drop fixed (let me know if you experience it).
 - Filter skills list to hide 0xp skills
 - Rest until sleepy, speeds up time until player can sleep again (ignores panic or pain limits to sleep)
 - Dragging corpses exhaustion rate ramps up from 35% to vanilla over time (120 sec)
