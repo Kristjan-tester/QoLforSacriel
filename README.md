@@ -29,6 +29,8 @@ Features:
     - Audio rings with higher radius from same source have priority now, concurrent ring radius labels offset for visibility
 - Car horn can be honked from outside when door is open or window open/broken. Both radial menu and key-bind
 - Audio direction visualiser (default off), Customisable categories for sounds groups to track, fps drop fixed (let me know if you experience it).
+	- Loudness scales the size of the arrow 
+ 	- Distance changes the colour: green is far away, Red is close 
 - Filter skills panel, on the fly:
 	- highlights recently improved skills with 'green' texts, within last 60 in-game minutes (by default)
 	- filter to hide 0xp skills
