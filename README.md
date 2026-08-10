@@ -25,7 +25,7 @@ Features:
     - Zombies can hear sounds outside of that range (depending on their hearing: 0.45x ; 1x; 3x range)
     - Game does not generate sounds that one would expect - opening doors, using microwave, for example - testing all of them is tricky, let me know when you see inconsistencies. 
     - Footsteps only make sound with probability for example, and crouch walking and running is same loudness (probably bug in vanilla). 
-    - UPDATED to include world objects (excluding zombies and animals).
+    - UPDATED to include world objects (excluding zombies), though not 100% sure if all animals will make rings.
     - Audio rings with higher radius from same source have priority now, concurrent ring radius labels offset for visibility
 - Car horn can be honked from outside when door is open or window open/broken. Both radial menu and key-bind
 - Audio direction visualiser (default off), Customisable categories for sounds groups to track, fps drop fixed (let me know if you experience it).
