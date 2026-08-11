@@ -181,6 +181,28 @@ local function candidateForTarget(target, actionTarget, alarmPriority, devicePri
     return nil
 end
 
+local function getNestedItemContainer(item)
+    if not item then
+        return nil
+    end
+
+    if item.getItemContainer then
+        local ok, container = pcall(item.getItemContainer, item)
+        if ok and container then
+            return container
+        end
+    end
+
+    if item.getInventory then
+        local ok, container = pcall(item.getInventory, item)
+        if ok and container then
+            return container
+        end
+    end
+
+    return nil
+end
+
 local function scanInventoryContainer(container, best, order)
     if not container or not container.getItems then
         return best, order
@@ -199,11 +221,9 @@ local function scanInventoryContainer(container, best, order)
             best = addCandidate(best, candidate)
         end
 
-        if item and item.getItemContainer then
-            local containerOk, itemContainer = pcall(item.getItemContainer, item)
-            if containerOk and itemContainer then
-                best, order = scanInventoryContainer(itemContainer, best, order)
-            end
+        local itemContainer = getNestedItemContainer(item)
+        if itemContainer then
+            best, order = scanInventoryContainer(itemContainer, best, order)
         end
     end
 
@@ -221,6 +241,42 @@ local function findInventoryCandidate(playerObj)
     end
 
     return scanInventoryContainer(inventory, nil, 0)
+end
+
+local function scanWorldContainer(container, square, distance, best, order)
+    if not container or not container.getItems then
+        return best, order
+    end
+
+    local ok, items = pcall(container.getItems, container)
+    if not ok or not items then
+        return best, order
+    end
+
+    for index = 0, items:size() - 1 do
+        local item = items:get(index)
+        order = order + 1
+        local candidate = candidateForTarget(item, item, 3, 4, true, square, distance, order)
+        if candidate then
+            best = addCandidate(best, candidate)
+        end
+
+        local itemContainer = getNestedItemContainer(item)
+        if itemContainer then
+            best, order = scanWorldContainer(itemContainer, square, distance, best, order)
+        end
+    end
+
+    return best, order
+end
+
+local function getObjectContainer(object)
+    if not object or not object.getContainer then
+        return nil
+    end
+
+    local ok, container = pcall(object.getContainer, object)
+    return ok and container or nil
 end
 
 local function getWorldTarget(object)
@@ -260,6 +316,11 @@ local function findWorldCandidate(playerObj, settings)
                             if candidate then
                                 best = addCandidate(best, candidate)
                             end
+                        end
+
+                        local container = getObjectContainer(object)
+                        if container then
+                            best, order = scanWorldContainer(container, square, distance, best, order)
                         end
                     end
                 end
@@ -385,7 +446,9 @@ local function queueCandidate(playerObj, candidate, logger)
     end
 
     if candidate.kind == "alarm" then
-        ISTimedActionQueue.add(ISStopAlarmClockAction:new(playerObj, candidate.target))
+        local alarmAction = ISStopAlarmClockAction:new(playerObj, candidate.target)
+        alarmAction.stopOnWalk = candidate.requiresWalk == true
+        ISTimedActionQueue.add(alarmAction)
     else
         ISTimedActionQueue.add(DeviceOffAction:new(playerObj, candidate.target, candidate.deviceData, mustWalk))
     end
@@ -396,12 +459,7 @@ local function queueCandidate(playerObj, candidate, logger)
     return true
 end
 
-local function onKeyStartPressed(key, settings, logger)
-    if settings.isEnabled("QoLforSacriel_EnableNearbyDeviceOff") ~= true or not matchesHotkey(key) then
-        return
-    end
-
-    local playerObj = getSpecificPlayer(0)
+local function runCommand(playerObj, source, settings, logger)
     if not playerObj or playerObj:isDead() then
         return
     end
@@ -413,12 +471,39 @@ local function onKeyStartPressed(key, settings, logger)
 
     if not candidate then
         if logger and logger.debug then
-            logger.debug("NearbyDeviceOff: no eligible device found")
+            logger.debug("NearbyDeviceOff: no eligible device found | source=" .. tostring(source))
         end
         return
     end
 
     queueCandidate(playerObj, candidate, logger)
+end
+
+local function onKeyStartPressed(key, settings, logger)
+    if settings.isEnabled("QoLforSacriel_EnableNearbyDeviceOff") ~= true or not matchesHotkey(key) then
+        return
+    end
+
+    runCommand(getSpecificPlayer(0), "hotkey", settings, logger)
+end
+
+local function getContextMenuLabel()
+    return getTextOrNull("UI_QoLforSacriel_NearbyDeviceOffContextMenu") or "Turn Off Nearby Device"
+end
+
+local function addContextMenuOption(playerIndex, context, settings, logger, source)
+    if settings.isEnabled("QoLforSacriel_EnableNearbyDeviceOff") ~= true then
+        return
+    end
+
+    local playerObj = getSpecificPlayer(playerIndex)
+    if not playerObj or playerObj:isDead() or playerObj:getVehicle() then
+        return
+    end
+
+    context:addOption(getContextMenuLabel(), playerObj, function(selectedPlayer)
+        runCommand(selectedPlayer, source, settings, logger)
+    end)
 end
 
 function NearbyDeviceOff.init(settings, logger)
@@ -432,6 +517,28 @@ function NearbyDeviceOff.init(settings, logger)
         end)
         if not ok and logger and logger.error then
             logger.error("NearbyDeviceOff key error: " .. tostring(err))
+        end
+    end)
+
+    Events.OnFillWorldObjectContextMenu.Add(function(playerIndex, context, worldobjects, test)
+        if test then
+            return
+        end
+
+        local ok, err = pcall(function()
+            addContextMenuOption(playerIndex, context, settings, logger, "world context")
+        end)
+        if not ok and logger and logger.error then
+            logger.error("NearbyDeviceOff world context error: " .. tostring(err))
+        end
+    end)
+
+    Events.OnFillInventoryObjectContextMenu.Add(function(playerIndex, context, items)
+        local ok, err = pcall(function()
+            addContextMenuOption(playerIndex, context, settings, logger, "inventory context")
+        end)
+        if not ok and logger and logger.error then
+            logger.error("NearbyDeviceOff inventory context error: " .. tostring(err))
         end
     end)
 
