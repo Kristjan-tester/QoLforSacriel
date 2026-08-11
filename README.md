@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.12
+Current version: v0.13
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -14,6 +14,9 @@ Current version: v0.12
 	- Made for single-player. Not tested in multiplayer.
  
 Features:
+- (NEW) - Towels take linear amount of water - 1 towel is enough now to dry yourself.
+- (NEW) - Improve entering car, character will reorient themselves when close to door
+- (NEW) - Fitness tab in Info panel - indicate weight gain in detail, strength training xp, etc.
 - (UPDATED) Switch off nearby device with keybind (CTRL+G) or context menu option - alarms, TV/Radio:
 	- searches nearby 3 radius cells for active items to turn off, walks to them and turns off
  	- priority highest to lowest:
