@@ -25,6 +25,7 @@ local originalWidgetTitleHeaderUpdateLabels = nil
 local originalWidgetTitleHeaderRender = nil
 local originalWidgetTitleHeaderCalculateLayout = nil
 local originalWidgetCraftLogicTitleCreateChildren = nil
+local originalCharacterProtectionRender = nil
 
 local function logDebug(message)
     if not loggerRef or not loggerRef.debug then
@@ -39,10 +40,8 @@ local function logDebug(message)
     if not settingsRef.isEnabled
         or settingsRef.isEnabled("QoLforSacriel_EnableUIFixes") ~= true
         or (
-            settingsRef.get("QoLforSacriel_UIFixes_EnableExactEquipmentStats") ~= true
-            and settingsRef.get("QoLforSacriel_UIFixes_EnableCraftOutputItemTooltip") ~= true
+            settingsRef.get("QoLforSacriel_UIFixes_EnableShowStats") ~= true
             and settingsRef.get("QoLforSacriel_UIFixes_EnableCraftRecipeXp") ~= true
-            and settingsRef.get("QoLforSacriel_UIFixes_ShowAllEquipmentTooltipStats") ~= true
         )
     then
         return
@@ -56,18 +55,11 @@ local function isUiFixesEnabled()
         and settingsRef.isEnabled("QoLforSacriel_EnableUIFixes") == true
 end
 
-local function isExactStatsEnabled()
+local function isShowStatsEnabled()
     if not isUiFixesEnabled() then
         return false
     end
-    return settingsRef.get("QoLforSacriel_UIFixes_EnableExactEquipmentStats") == true
-end
-
-local function isCraftOutputTooltipEnabled()
-    if not isUiFixesEnabled() then
-        return false
-    end
-    return settingsRef.get("QoLforSacriel_UIFixes_EnableCraftOutputItemTooltip") == true
+    return settingsRef.get("QoLforSacriel_UIFixes_EnableShowStats") == true
 end
 
 local function isCraftRecipeXpEnabled()
@@ -77,16 +69,29 @@ local function isCraftRecipeXpEnabled()
     return settingsRef.get("QoLforSacriel_UIFixes_EnableCraftRecipeXp") == true
 end
 
-local function isShowAllEquipmentStatsEnabled()
+local function isBasicWeaponStatsEnabled()
     if not isUiFixesEnabled() then
         return false
     end
-    return settingsRef.get("QoLforSacriel_UIFixes_ShowAllEquipmentTooltipStats") == true
+    return settingsRef.get("QoLforSacriel_UIFixes_ShowBasicWeaponStats") == true
+end
+
+local function toNumberOrNil(value)
+    local n = tonumber(value)
+    if n == nil or n ~= n or n == math.huge or n == -math.huge then
+        return nil
+    end
+    return n
 end
 
 local function formatCurrentMax(currentValue, maxValue)
-    local current = math.max(0, math.floor(tonumber(currentValue) or 0))
-    local max = math.max(0, math.floor(tonumber(maxValue) or 0))
+    local current = toNumberOrNil(currentValue)
+    local max = toNumberOrNil(maxValue)
+    if current == nil or max == nil then
+        return nil
+    end
+    current = math.max(0, math.floor(current))
+    max = math.max(0, math.floor(max))
     if max <= 0 then
         return tostring(current)
     end
@@ -94,14 +99,6 @@ local function formatCurrentMax(currentValue, maxValue)
         current = max
     end
     return tostring(current) .. "/" .. tostring(max)
-end
-
-local function toNumberOrNil(value)
-    local n = tonumber(value)
-    if n == nil then
-        return nil
-    end
-    return n
 end
 
 local function formatFloat(value, decimals)
@@ -171,6 +168,29 @@ local function safeGetMethod(target, methodName)
     end
 
     return true, method
+end
+
+local function getWornItemAt(wornItems, index)
+    if not wornItems then
+        return nil
+    end
+
+    local itemOk, item = safeCallMethod(wornItems, "getItemByIndex", index)
+    if itemOk and item then
+        return item
+    end
+
+    local entryOk, entry = safeCallMethod(wornItems, "get", index)
+    if not entryOk or not entry then
+        return nil
+    end
+
+    local wrappedItemOk, wrappedItem = safeCallMethod(entry, "getItem")
+    if wrappedItemOk and wrappedItem then
+        return wrappedItem
+    end
+
+    return entry
 end
 
 local function normalizeDisplayCategory(value)
@@ -256,7 +276,7 @@ local function getMethodNumberOrNil(item, methodName)
         return nil
     end
 
-    return tonumber(value)
+    return toNumberOrNil(value)
 end
 
 local function isExplosiveItem(item)
@@ -363,7 +383,6 @@ local function collectEquipmentStats(item, options)
     end
 
     local omitIdentityStats = options and options.omitIdentityStats == true
-    local forceFullStats = options and options.forceFullStats == true
     local context = options and options.context or nil
 
     local lines = {}
@@ -407,7 +426,7 @@ local function collectEquipmentStats(item, options)
         table.insert(lines, "Damage: " .. damageText)
     end
 
-    if not forceFullStats and not isShowAllEquipmentStatsEnabled() then
+    if isBasicWeaponStatsEnabled() then
         return lines
     end
 
@@ -513,6 +532,481 @@ local function buildStatsDescription(item, options)
         return nil
     end
     return table.concat(lines, " <BR> ")
+end
+
+local function getLocalizedText(key, fallback)
+    if type(getText) ~= "function" then
+        return fallback
+    end
+    local ok, text = pcall(getText, key)
+    if ok and text and text ~= "" then
+        return text
+    end
+    return fallback
+end
+
+local function formatPercent(value, decimals)
+    local numericValue = toNumberOrNil(value)
+    if numericValue == nil then
+        return nil
+    end
+    return formatFloat(numericValue * 100, decimals or 0) .. "%"
+end
+
+local function formatMultiplier(value)
+    local numericValue = toNumberOrNil(value)
+    if numericValue == nil then
+        return nil
+    end
+    local multiplier = formatFloat(numericValue, 2)
+    local delta = formatPercent(numericValue - 1, 0)
+    if not multiplier or not delta then
+        return nil
+    end
+    if numericValue > 1 then
+        delta = "+" .. delta
+    end
+    return "x" .. multiplier .. " (" .. delta .. ")"
+end
+
+local function getWornEquipmentModifierRows(character)
+    if not character then
+        return {}
+    end
+
+    local rows = {}
+    local runSpeed = 1
+    local combatSpeed = 1
+    local vision = 1
+    local hearing = 1
+    local discomfort = 0
+    local stompPower = nil
+    local wornItemsOk, wornItems = safeCallMethod(character, "getWornItems")
+    local countOk, wornCount = safeCallMethod(wornItemsOk and wornItems or nil, "size")
+    wornCount = countOk and math.max(0, math.floor(tonumber(wornCount) or 0)) or 0
+    for index = 0, wornCount - 1 do
+        local item = getWornItemAt(wornItems, index)
+        local runModifier = getMethodNumberOrNil(item, "getRunSpeedModifier")
+        if runModifier then
+            runSpeed = runSpeed + (runModifier - 1)
+        end
+
+        local combatModifier = getMethodNumberOrNil(item, "getCombatSpeedModifier")
+        if combatModifier then
+            combatSpeed = combatSpeed + (combatModifier - 1)
+        end
+
+        local visionModifier = getMethodNumberOrNil(item, "getVisionModifier")
+        if visionModifier and visionModifier > 0 then
+            vision = vision * visionModifier
+        end
+
+        local hearingModifier = getMethodNumberOrNil(item, "getHearingModifier")
+        if hearingModifier and hearingModifier > 0 then
+            hearing = hearing * hearingModifier
+        end
+
+        local discomfortModifier = getMethodNumberOrNil(item, "getDiscomfortModifier")
+        if discomfortModifier then
+            discomfort = discomfort + discomfortModifier
+        end
+    end
+
+    if ItemBodyLocation and ItemBodyLocation.SHOES then
+        local shoesOk, shoes = safeCallMethod(character, "getWornItem", ItemBodyLocation.SHOES)
+        if shoesOk and shoes then
+            stompPower = getMethodNumberOrNil(shoes, "getStompPower")
+        end
+    end
+
+    discomfort = math.max(0, discomfort)
+    rows[#rows + 1] = {
+        label = getLocalizedText("Tooltip_CombatSpeedModifier", "Combat Speed"),
+        value = formatMultiplier(combatSpeed),
+    }
+
+    rows[#rows + 1] = {
+        label = getLocalizedText("UI_QoLforSacriel_Protection_RunSpeedEquipment", "Run Speed (Equipment)"),
+        value = formatMultiplier(runSpeed),
+    }
+
+    rows[#rows + 1] = {
+        label = getLocalizedText("UI_QoLforSacriel_Protection_VisionImpairment", "Vision Impairment"),
+        value = formatMultiplier(vision),
+    }
+
+    rows[#rows + 1] = {
+        label = getLocalizedText("UI_QoLforSacriel_Protection_HearingImpairment", "Hearing Impairment"),
+        value = formatMultiplier(hearing),
+    }
+
+    rows[#rows + 1] = {
+        label = getLocalizedText("UI_QoLforSacriel_Protection_MaxWornDiscomfort", "Max worn Discomfort"),
+        value = tostring(math.ceil(discomfort * 100)) .. "/100",
+    }
+
+    if not isBasicWeaponStatsEnabled() and stompPower then
+        rows[#rows + 1] = {
+            label = getLocalizedText("UI_QoLforSacriel_Protection_StompingPower", "Stomping Power"),
+            value = tostring(math.floor(stompPower * 100 + 0.5)) .. "%",
+        }
+    end
+
+    return rows, {
+        wornCount = wornCount,
+        combatSpeed = combatSpeed,
+        runSpeed = runSpeed,
+        vision = vision,
+        hearing = hearing,
+        discomfort = discomfort,
+        stompPower = stompPower,
+    }
+end
+
+local function addNumericAppendLine(lines, seen, key, label, value)
+    if not key or seen[key] or not label or not value or value == "" then
+        return
+    end
+    local normalized = string.lower(tostring(value))
+    if normalized == "nan" or normalized == "inf" or normalized == "infinity" or normalized == "n/a" then
+        return
+    end
+    seen[key] = true
+    lines[#lines + 1] = {
+        label = tostring(label),
+        value = tostring(value),
+    }
+end
+
+local function itemHasHideRemainingTag(item)
+    if not ItemTag or not ItemTag.HIDE_REMAINING then
+        return false
+    end
+    local ok, hasTag = safeCallMethod(item, "hasTag", ItemTag.HIDE_REMAINING)
+    return ok and hasTag == true
+end
+
+local function itemHasTag(item, tagName)
+    if not ItemTag or not ItemTag[tagName] then
+        return false
+    end
+    local ok, hasTag = safeCallMethod(item, "hasTag", ItemTag[tagName])
+    return ok and hasTag == true
+end
+
+local function isItemInstance(item, className)
+    return instanceof and item and instanceof(item, className) == true
+end
+
+local function isLiteratureItem(item)
+    local literatureOk, literature = safeCallItemMethod(item, "IsLiterature")
+    return (literatureOk and literature == true) or isItemInstance(item, "Literature")
+end
+
+local function isShoesItem(item)
+    if not ItemBodyLocation or not ItemBodyLocation.SHOES then
+        return false
+    end
+    local bodyLocationOk, bodyLocation = safeCallItemMethod(item, "getBodyLocation")
+    return bodyLocationOk and bodyLocation == ItemBodyLocation.SHOES
+end
+
+local function characterHasTrait(character, traitName)
+    if not character or not CharacterTrait or not CharacterTrait[traitName] then
+        return false
+    end
+    local ok, result = safeCallMethod(character, "hasTrait", CharacterTrait[traitName])
+    return ok and result == true
+end
+
+local function canShowFoodNutrition(item, character)
+    if characterHasTrait(character, "NUTRITIONIST") or characterHasTrait(character, "NUTRITIONIST2") then
+        return true
+    end
+    local packagedOk, packaged = safeCallItemMethod(item, "isPackaged")
+    if not packagedOk or packaged ~= true or characterHasTrait(character, "ILLITERATE") then
+        return false
+    end
+    local modDataOk, modData = safeCallItemMethod(item, "getModData")
+    local noLabel = false
+    if modDataOk and modData and modData.rawget then
+        local okNoLabel, value = pcall(modData.rawget, modData, "NoLabel")
+        noLabel = okNoLabel and value ~= nil
+    end
+    if noLabel then
+        return false
+    end
+    local darkOk, tooDark = safeCallMethod(character, "tooDarkToRead")
+    return not (darkOk and tooDark == true)
+end
+
+local function addFoodAppendRows(lines, seen, item, character)
+    local effects = {
+        { "getHungerChange", "food-hunger", "Tooltip_food_Hunger", "Hunger", 100 },
+        { "getThirstChange", "food-thirst", "Tooltip_food_Thirst", "Thirst", -200 },
+        { "getEnduranceChange", "food-endurance", "Tooltip_food_Endurance", "Endurance", 100 },
+        { "getStressChange", "food-stress", "Tooltip_food_Stress", "Stress", 100 },
+        { "getBoredomChange", "food-boredom", "Tooltip_food_Boredom", "Boredom", 1 },
+        { "getUnhappyChange", "food-unhappiness", "Tooltip_food_Unhappiness", "Unhappiness", 1 },
+    }
+    for index = 1, #effects do
+        local spec = effects[index]
+        local value = getMethodNumberOrNil(item, spec[1])
+        if value and value ~= 0 then
+            local formatted = formatFloat(value * spec[5], 0)
+            if formatted and value * spec[5] > 0 then
+                formatted = "+" .. formatted
+            end
+            addNumericAppendLine(lines, seen, spec[2], getLocalizedText(spec[3], spec[4]), formatted)
+        end
+    end
+
+    local freezingTime = getMethodNumberOrNil(item, "getFreezingTime")
+    if freezingTime and freezingTime > 0 and freezingTime < 100 then
+        addNumericAppendLine(lines, seen, "food-freezing", getLocalizedText("IGUI_invpanel_FreezingTime", "Freezing"), formatFloat(freezingTime, 0) .. "%")
+    end
+
+    if canShowFoodNutrition(item, character) then
+        local nutrition = {
+            { "getCalories", "food-calories", "Tooltip_food_Calories", "Calories" },
+            { "getCarbohydrates", "food-carbohydrates", "Tooltip_food_Carbs", "Carbohydrates" },
+            { "getProteins", "food-proteins", "Tooltip_food_Prots", "Proteins" },
+            { "getLipids", "food-lipids", "Tooltip_food_Fat", "Fat" },
+        }
+        for index = 1, #nutrition do
+            local spec = nutrition[index]
+            local value = getMethodNumberOrNil(item, spec[1])
+            if value then
+                addNumericAppendLine(lines, seen, spec[2], getLocalizedText(spec[3], spec[4]), formatFloat(value, 0))
+            end
+        end
+    end
+end
+
+local function addClothingAppendRows(lines, seen, item)
+    local cosmeticOk, cosmetic = safeCallItemMethod(item, "isCosmetic")
+    local isCosmetic = cosmeticOk and cosmetic == true
+    if not isCosmetic then
+        local condition = getMethodNumberOrNil(item, "getCondition")
+        local conditionMax = getMethodNumberOrNil(item, "getConditionMax")
+        if condition and conditionMax and conditionMax > 0 then
+            local ratio = formatCurrentMax(condition, conditionMax)
+            local percentage = formatPercent(condition / conditionMax)
+            if ratio and percentage then
+                addNumericAppendLine(lines, seen, "clothing-condition", getLocalizedText("Tooltip_weapon_Condition", "Condition"), ratio .. " (" .. percentage .. ")")
+            end
+        end
+        local resistanceRows = {
+            { "getInsulation", "clothing-insulation", "Tooltip_item_Insulation", "Insulation", true },
+            { "getWindresistance", "clothing-wind", "Tooltip_item_Windresist", "Wind Resistance", false },
+            { "getWaterResistance", "clothing-water", "Tooltip_item_Waterresist", "Water Resistance", false },
+        }
+        for index = 1, #resistanceRows do
+            local spec = resistanceRows[index]
+            local value = getMethodNumberOrNil(item, spec[1])
+            if value and (spec[5] or value > 0) then
+                addNumericAppendLine(lines, seen, spec[2], getLocalizedText(spec[3], spec[4]), formatPercent(value))
+            end
+        end
+    end
+
+    local stateRows = {
+        { "getBloodLevel", "clothing-blood", "Tooltip_clothing_bloody", "Blood", 0 },
+        { "getDirtiness", "clothing-dirt", "Tooltip_clothing_dirty", "Dirt", 1 },
+        { "getWetness", "clothing-wetness", "Tooltip_clothing_wet", "Wetness", 0 },
+    }
+    for index = 1, #stateRows do
+        local spec = stateRows[index]
+        local value = getMethodNumberOrNil(item, spec[1])
+        if value and value >= spec[5] and value > 0 then
+            addNumericAppendLine(lines, seen, spec[2], getLocalizedText(spec[3], spec[4]), formatFloat(value, 0) .. "%")
+        end
+    end
+
+    local runSpeed = getMethodNumberOrNil(item, "getRunSpeedModifier")
+    if runSpeed and runSpeed ~= 1 then
+        addNumericAppendLine(lines, seen, "clothing-run-speed", getLocalizedText("Tooltip_RunSpeedModifier", "Run Speed"), formatMultiplier(runSpeed))
+    end
+
+    local combatSpeed = getMethodNumberOrNil(item, "getCombatSpeedModifier")
+    if combatSpeed and combatSpeed ~= 1 then
+        addNumericAppendLine(lines, seen, "clothing-combat-speed", getLocalizedText("Tooltip_CombatSpeedModifier", "Combat Speed"), formatMultiplier(combatSpeed))
+    end
+
+    if not isBasicWeaponStatsEnabled() and isShoesItem(item) then
+        local stompPower = getMethodNumberOrNil(item, "getStompPower")
+        if stompPower then
+            addNumericAppendLine(lines, seen, "clothing-stomping-power", getLocalizedText("UI_QoLforSacriel_Protection_StompingPower", "Stomping Power"), formatPercent(stompPower))
+        end
+    end
+end
+
+local function addContainerAppendRows(lines, seen, item, character)
+    local capacityOk, capacity = safeCallMethod(item, "getEffectiveCapacity", character)
+    if capacityOk and toNumberOrNil(capacity) and toNumberOrNil(capacity) ~= 0 then
+        addNumericAppendLine(lines, seen, "container-capacity", getLocalizedText("Tooltip_container_Capacity", "Capacity"), formatFloat(capacity, 0))
+    end
+    local reduction = getMethodNumberOrNil(item, "getWeightReduction")
+    if reduction and reduction ~= 0 then
+        addNumericAppendLine(lines, seen, "container-reduction", getLocalizedText("Tooltip_container_Weight_Reduction", "Weight Reduction"), formatFloat(reduction, 0) .. "%")
+    end
+    local maxItemSize = getMethodNumberOrNil(item, "getMaxItemSize")
+    if maxItemSize and maxItemSize ~= 0 then
+        addNumericAppendLine(lines, seen, "container-max-size", getLocalizedText("Tooltip_container_Max_Item_Size", "Max Item Size"), formatFloat(maxItemSize, 2))
+    end
+end
+
+local function canShowLiteratureEffects(item, character)
+    if not character then
+        return false
+    end
+
+    local modDataOk, modData = safeCallItemMethod(item, "getModData")
+    if not modDataOk or not modData then
+        return false
+    end
+
+    local titleOk, title = pcall(function()
+        return modData.literatureTitle
+    end)
+    if not titleOk then
+        return false
+    end
+    if title == nil then
+        return true
+    end
+
+    local readOk, read = safeCallMethod(character, "isLiteratureRead", title)
+    return readOk and read ~= true
+end
+
+local function addLiteratureAppendRows(lines, seen, item, character)
+    if canShowLiteratureEffects(item, character) then
+        local effects = {
+            { "getBoredomChange", "literature-boredom", "Tooltip_food_Boredom", "Boredom", 1 },
+            { "getStressChange", "literature-stress", "Tooltip_literature_Stress_Reduction", "Stress", 100 },
+            { "getUnhappyChange", "literature-unhappiness", "Tooltip_food_Unhappiness", "Unhappiness", 1 },
+        }
+        for index = 1, #effects do
+            local spec = effects[index]
+            local effect = getMethodNumberOrNil(item, spec[1])
+            if effect and effect ~= 0 then
+                addNumericAppendLine(lines, seen, spec[2], getLocalizedText(spec[3], spec[4]), formatFloat(effect * spec[5], 0))
+            end
+        end
+    end
+
+    local pages = getMethodNumberOrNil(item, "getNumberOfPages")
+    if pages and pages ~= -1 then
+        local value = tostring(math.max(0, math.floor(pages)))
+        local fullTypeOk, fullType = safeCallItemMethod(item, "getFullType")
+        if character and fullTypeOk and fullType then
+            local readOk, readPages = safeCallMethod(character, "getAlreadyReadPages", fullType)
+            if readOk then
+                local ratio = formatCurrentMax(readPages or 0, pages)
+                if ratio then
+                    value = ratio
+                end
+            end
+        end
+        addNumericAppendLine(lines, seen, "literature-pages", getLocalizedText("Tooltip_literature_Number_of_Pages", "Pages"), value)
+    end
+end
+
+local function collectNumericTooltipAppendLines(item, character)
+    local lines = {}
+    local seen = {}
+    local isWeapon = isStrictWeaponItem(item)
+    local isClothing = instanceof and instanceof(item, "Clothing") == true
+
+    local remainingUses = getMethodNumberOrNil(item, "getCurrentUsesFloat")
+    if isItemInstance(item, "DrainableComboItem") and remainingUses and not itemHasHideRemainingTag(item) and remainingUses >= 0 and remainingUses <= 1 then
+        addNumericAppendLine(lines, seen, "remaining", getLocalizedText("IGUI_invpanel_Remaining", "Remaining"), formatPercent(remainingUses))
+    end
+
+    local fatigue = getMethodNumberOrNil(item, "getFatigueChange")
+    if fatigue and fatigue ~= 0 then
+        local formatted = formatPercent(fatigue)
+        if formatted and fatigue > 0 then
+            formatted = "+" .. formatted
+        end
+        addNumericAppendLine(lines, seen, "fatigue", getLocalizedText("Tooltip_item_Fatigue", "Fatigue"), formatted)
+    end
+
+    local wetOk, wet = safeCallItemMethod(item, "isWet")
+    local wetCooldown = getMethodNumberOrNil(item, "getWetCooldown")
+    if wetOk and wet == true and wetCooldown and wetCooldown >= 0 and wetCooldown <= 10000 then
+        addNumericAppendLine(lines, seen, "wetness", getLocalizedText("Tooltip_Wetness", "Wetness"), formatPercent(wetCooldown / 10000))
+    end
+
+    local hasSharpnessOk, hasSharpness = safeCallItemMethod(item, "hasSharpness")
+    local sharpness = getMethodNumberOrNil(item, "getSharpness")
+    if not isWeapon and hasSharpnessOk and hasSharpness == true and sharpness and sharpness >= 0 and sharpness <= 1 then
+        addNumericAppendLine(lines, seen, "sharpness", getLocalizedText("Tooltip_weapon_Sharpness", "Sharpness"), formatPercent(sharpness))
+    end
+
+    local condition = getMethodNumberOrNil(item, "getCondition")
+    local conditionMax = getMethodNumberOrNil(item, "getConditionMax")
+    local mechanicType = getMethodNumberOrNil(item, "getMechanicType")
+    if not isWeapon and not isClothing and condition and conditionMax and conditionMax > 0 then
+        local showCondition = (condition < conditionMax) or (mechanicType and mechanicType > 0) or itemHasTag(item, "SHOW_CONDITION")
+        if showCondition then
+            local ratio = formatCurrentMax(condition, conditionMax)
+            local percentage = formatPercent(condition / conditionMax)
+            if ratio and percentage then
+                addNumericAppendLine(lines, seen, "condition", getLocalizedText("Tooltip_weapon_Condition", "Condition"), ratio .. " (" .. percentage .. ")")
+            end
+        end
+    end
+
+    local modifiers = {
+        { "getVisionModifier", "vision", "Tooltip_item_VisionImpariment", "Vision" },
+        { "getHearingModifier", "hearing", "Tooltip_item_HearingImpariment", "Hearing" },
+    }
+    for index = 1, #modifiers do
+        local spec = modifiers[index]
+        local value = getMethodNumberOrNil(item, spec[1])
+        if value and value ~= 1 then
+            addNumericAppendLine(lines, seen, spec[2], getLocalizedText(spec[3], spec[4]), formatMultiplier(value))
+        end
+    end
+
+    local discomfort = getMethodNumberOrNil(item, "getDiscomfortModifier")
+    if discomfort and discomfort ~= 0 then
+        local formatted = formatPercent(discomfort)
+        if formatted and discomfort > 0 then
+            formatted = "+" .. formatted
+        end
+        addNumericAppendLine(lines, seen, "discomfort", getLocalizedText("Tooltip_item_Discomfort", "Discomfort"), formatted)
+    end
+
+    if isItemInstance(item, "Food") then
+        addFoodAppendRows(lines, seen, item, character)
+    elseif isItemInstance(item, "Clothing") then
+        addClothingAppendRows(lines, seen, item)
+    elseif isItemInstance(item, "InventoryContainer") then
+        addContainerAppendRows(lines, seen, item, character)
+    elseif isLiteratureItem(item) then
+        addLiteratureAppendRows(lines, seen, item, character)
+    end
+
+    if isWeapon then
+        local weaponLines = collectEquipmentStats(item)
+        for index = 1, #weaponLines do
+            local line = tostring(weaponLines[index])
+            if not string.find(line, "N/A", 1, true) then
+                local label, value = string.match(line, "^(.+):%s*(.+)$")
+                if label and value then
+                    lines[#lines + 1] = {
+                        label = label,
+                        value = value,
+                    }
+                end
+            end
+        end
+    end
+
+    return lines
 end
 
 local function createInventoryItemByFullName(fullName)
@@ -816,25 +1310,24 @@ local function resolvePrimaryOutputItemFromLogic(logic)
     return resolvedItem
 end
 
-local function buildTitleHeaderOutputStatsLine(logic)
+local function getCraftOutputStats(logic)
     local outputItem = resolvePrimaryOutputItemFromLogic(logic)
     if not outputItem then
         return nil
     end
 
-    local lines = collectEquipmentStats(outputItem, { omitIdentityStats = true, forceFullStats = true, context = "crafting" })
+    local playerOk, playerObj = safeCallMethod(logic, "getPlayer")
+    local lines = collectNumericTooltipAppendLines(outputItem, playerOk and playerObj or nil)
     if #lines == 0 then
         return nil
     end
 
-    local compactLines = {}
-    compactLines[#compactLines + 1] = "Output Weapon Stats:"
-
-    for i = 1, #lines do
-        compactLines[#compactLines + 1] = tostring(lines[i])
-    end
-
-    return table.concat(compactLines, "\n")
+    local fullTypeOk, fullType = safeCallItemMethod(outputItem, "getFullType")
+    return {
+        title = getLocalizedText("UI_QoLforSacriel_Craft_OutputStats", "Output Stats"),
+        rows = lines,
+        signature = fullTypeOk and tostring(fullType) or tostring(outputItem),
+    }
 end
 
 local function getSandboxXpMultiplier(perk)
@@ -1171,7 +1664,7 @@ local function applyTooltipAppendFromScriptTable(widget, scriptTable, item, sour
         return false
     end
 
-    local statsText = buildStatsDescription(item, { forceFullStats = true, context = "crafting" })
+    local statsText = buildStatsDescription(item, { context = "crafting" })
     if not statsText then
         return false
     end
@@ -1340,12 +1833,12 @@ local function isCraftLogicOutputSlot(itemSlot)
     return false
 end
 
-local function appendStatsToObjectTooltip(tooltipUI, item, sourceTag)
+local function appendStatsToObjectTooltip(tooltipUI, item, character, sourceTag)
     if not tooltipUI or not item then
         return false
     end
 
-    local lines = collectEquipmentStats(item, { forceFullStats = true, context = "crafting" })
+    local lines = collectNumericTooltipAppendLines(item, character)
     if #lines == 0 then
         return false
     end
@@ -1374,13 +1867,24 @@ local function appendStatsToObjectTooltip(tooltipUI, item, sourceTag)
         tooltipHeight = tonumber(resolvedHeight)
     end
 
-    local padLeft = tonumber(tooltipUI.padLeft) or 0
-    local padBottom = tonumber(tooltipUI.padBottom) or 0
+    local padLeft = 5
+    local padBottom = 5
+    local padRight = 5
+    local columnGap = 16
     local y = math.max(0, tooltipHeight - padBottom)
+    local textManager = getTextManager and getTextManager() or nil
 
     for _, line in ipairs(lines) do
-        tooltipUI:DrawText(font, tostring(line), padLeft, y, 0.75, 0.95, 0.75, 1.0)
-        tooltipUI:adjustWidth(padLeft, tostring(line))
+        local label = tostring(line.label)
+        local value = tostring(line.value)
+        if textManager and type(textManager.MeasureStringX) == "function" then
+            local requiredWidth = padLeft + textManager:MeasureStringX(font, label) + columnGap + textManager:MeasureStringX(font, value) + padRight
+            tooltipUI:adjustWidth(requiredWidth, "")
+        else
+            tooltipUI:adjustWidth(padLeft, label .. "  " .. value)
+        end
+        tooltipUI:DrawText(font, label, padLeft, y, 0.75, 0.95, 0.75, 1.0)
+        tooltipUI:DrawTextRight(font, value, tooltipUI:getWidth() - padRight, y, 1.0, 1.0, 1.0, 1.0)
         y = y + lineSpacing
     end
 
@@ -1448,12 +1952,13 @@ local function patchCraftLogicPreviewTooltip()
                 originalDrawTooltip(itemSlot, tooltipUI)
             end
 
-            if not isCraftOutputTooltipEnabled() then
+            if not isShowStatsEnabled() then
                 return
             end
 
             local outputItem = resolveOutputItemFromCraftLogicItemSlot(itemSlot)
-            appendStatsToObjectTooltip(tooltipUI, outputItem, "ISWidgetCraftLogicInputControl.outputItems.drawTooltip")
+            local playerOk, playerObj = safeCallMethod(self, "getPlayer")
+            appendStatsToObjectTooltip(tooltipUI, outputItem, playerOk and playerObj or nil, "ISWidgetCraftLogicInputControl.outputItems.drawTooltip")
         end
 
         self.outputItems.qolEquipmentStatsTooltipPatched = true
@@ -1509,7 +2014,7 @@ local function patchCraftTooltipRenderFallback()
     originalToolTipItemSlotRender = ISToolTipItemSlot.render
 
     ISToolTipItemSlot.render = function(self)
-        if not isCraftOutputTooltipEnabled() then
+        if not isShowStatsEnabled() then
             return originalToolTipItemSlotRender(self)
         end
 
@@ -1526,7 +2031,7 @@ local function patchCraftTooltipRenderFallback()
         itemSlot.drawTooltip = function(slot, tooltipUI)
             originalDrawTooltip(slot, tooltipUI)
             local outputItem = resolveOutputItemFromCraftLogicItemSlot(slot)
-            appendStatsToObjectTooltip(tooltipUI, outputItem, "ISToolTipItemSlot.render")
+            appendStatsToObjectTooltip(tooltipUI, outputItem, nil, "ISToolTipItemSlot.render")
         end
 
         local ok, err = pcall(function()
@@ -1561,7 +2066,11 @@ local function patchInventoryTooltipRenderFallback()
     originalToolTipInvRender = ISToolTipInv.render
 
     ISToolTipInv.render = function(self)
-        if not isExactStatsEnabled() and not isCraftOutputTooltipEnabled() then
+        if self and self.owner and self.owner.Type == "ISEquippedItem" then
+            return originalToolTipInvRender(self)
+        end
+
+        if not isShowStatsEnabled() then
             return originalToolTipInvRender(self)
         end
 
@@ -1569,29 +2078,48 @@ local function patchInventoryTooltipRenderFallback()
             return originalToolTipInvRender(self)
         end
 
-        if self.owner and self.owner.Type == "ISEquippedItem" then
-            return originalToolTipInvRender(self)
-        end
-
-        local lines = collectEquipmentStats(self.item)
+        local characterOk, character = safeCallMethod(self.tooltip, "getCharacter")
+        local lines = collectNumericTooltipAppendLines(self.item, characterOk and character or nil)
         if #lines == 0 then
             return originalToolTipInvRender(self)
         end
 
         local font = UIFont[getCore():getOptionTooltipFont()]
         local lineSpacing = self.tooltip:getLineSpacing()
-        local baseHeight = self.tooltip:getHeight()
-        local newHeight = baseHeight + (#lines * lineSpacing)
+        local sectionTitle = getLocalizedText("UI_QoLforSacriel_Modules_NumericTooltipAppendHeader", "ShowStats")
+        local extraLineCount = #lines + (sectionTitle and 1 or 0)
+        local extraHeight = extraLineCount * lineSpacing
+        local padLeft = 5
+        local padRight = 5
+        local columnGap = 16
+        local requiredWidth = 0
+        local textManager = getTextManager and getTextManager() or nil
+        if textManager and type(textManager.MeasureStringX) == "function" then
+            for _, line in ipairs(lines) do
+                local labelWidth = textManager:MeasureStringX(font, line.label)
+                local valueWidth = textManager:MeasureStringX(font, line.value)
+                requiredWidth = math.max(requiredWidth, padLeft + labelWidth + columnGap + valueWidth + padRight)
+            end
+        end
 
         local originalSetHeight = ISToolTipInv.setHeight
+        local originalSetWidth = ISToolTipInv.setWidth
         local originalDrawRectBorder = ISToolTipInv.drawRectBorder
-        if type(originalSetHeight) ~= "function" or type(originalDrawRectBorder) ~= "function" then
+        if type(originalSetHeight) ~= "function" or type(originalSetWidth) ~= "function" or type(originalDrawRectBorder) ~= "function" then
             return originalToolTipInvRender(self)
         end
 
-        self.setHeight = function(instance, _, ...)
+        self.setWidth = function(instance, width, ...)
+            local finalWidth = math.max(tonumber(width) or 0, requiredWidth)
+            if instance.tooltip then
+                instance.tooltip:setWidth(finalWidth)
+            end
+            return originalSetWidth(instance, finalWidth, ...)
+        end
+
+        self.setHeight = function(instance, height, ...)
             instance.keepOnScreen = false
-            return originalSetHeight(instance, newHeight, ...)
+            return originalSetHeight(instance, (tonumber(height) or 0) + extraHeight, ...)
         end
 
         self.drawRectBorder = function(instance, ...)
@@ -1599,10 +2127,14 @@ local function patchInventoryTooltipRenderFallback()
                 return originalDrawRectBorder(instance, ...)
             end
 
-            local y = baseHeight
-            local padLeft = 5
+            local y = instance.tooltip:getHeight()
+            if sectionTitle then
+                instance.tooltip:DrawText(font, sectionTitle, padLeft, y, 0.75, 0.95, 0.75, 1.0)
+                y = y + lineSpacing
+            end
             for _, line in ipairs(lines) do
-                instance.tooltip:DrawText(font, tostring(line), padLeft, y, 0.75, 0.95, 0.75, 1.0)
+                instance.tooltip:DrawText(font, line.label, padLeft, y, 0.75, 0.95, 0.75, 1.0)
+                instance.tooltip:DrawTextRight(font, line.value, instance.tooltip:getWidth() - padRight, y, 1.0, 1.0, 1.0, 1.0)
                 y = y + lineSpacing
             end
             return originalDrawRectBorder(instance, ...)
@@ -1612,6 +2144,7 @@ local function patchInventoryTooltipRenderFallback()
             originalToolTipInvRender(self)
         end)
 
+    self.setWidth = originalSetWidth
         self.setHeight = originalSetHeight
         self.drawRectBorder = originalDrawRectBorder
 
@@ -1662,6 +2195,31 @@ local function patchCraftTitleHeaderInfo()
         }
     end
 
+    local function measureTitleHeaderStatsPanel(stats, font)
+        if not stats or not stats.rows or #stats.rows == 0 or not getTextManager then
+            return nil
+        end
+
+        local textManager = getTextManager()
+        if not textManager or not textManager.MeasureStringX or not textManager.getFontHeight then
+            return nil
+        end
+
+        local columnGap = 16
+        local width = textManager:MeasureStringX(font, stats.title)
+        for _, row in ipairs(stats.rows) do
+            local rowWidth = textManager:MeasureStringX(font, row.label) + columnGap + textManager:MeasureStringX(font, row.value)
+            width = math.max(width, rowWidth)
+        end
+
+        return {
+            title = stats.title,
+            rows = stats.rows,
+            width = width,
+            height = textManager:getFontHeight(font) * (#stats.rows + 1),
+        }
+    end
+
     ISWidgetTitleHeader.updateLabels = function(self)
         originalWidgetTitleHeaderUpdateLabels(self)
 
@@ -1681,19 +2239,20 @@ local function patchCraftTitleHeaderInfo()
         end
         logCraftRecipeXpState(self, okRecipe and recipe or nil, xpLine)
 
-        if isCraftOutputTooltipEnabled() and self.qolLastTitleStatsRecipeSignature ~= recipeSignature then
-            self.qolLastTitleStatsRecipeSignature = recipeSignature
-            self.qolLastTitleStatsLine = buildTitleHeaderOutputStatsLine(self.logic)
+        local stats = isShowStatsEnabled() and getCraftOutputStats(self.logic) or nil
+        local statsSignature = recipeSignature .. "|" .. (stats and stats.signature or "<none>")
+        if isShowStatsEnabled() and self.qolLastTitleStatsRecipeSignature ~= statsSignature then
+            self.qolLastTitleStatsRecipeSignature = statsSignature
+            self.qolLastTitleStats = stats
 
-            if self.qolLastTitleStatsLine and self.qolLastTitleStatsLine ~= "" then
+            if self.qolLastTitleStats then
                 logDebug("titleHeader.output stats resolved for recipe='" .. recipeSignature .. "'")
             else
                 logDebug("titleHeader.output stats unavailable for recipe='" .. recipeSignature .. "'")
             end
         end
 
-        local statsLine = self.qolLastTitleStatsLine
-        local statsText = isCraftOutputTooltipEnabled() and statsLine or nil
+        local statsModel = isShowStatsEnabled() and self.qolLastTitleStats or nil
         local xpText = xpLine and xpLine ~= "" and xpLine or nil
         if xpText then
             if self.qolLastXpTitleHeaderSignature ~= recipeSignature then
@@ -1705,7 +2264,7 @@ local function patchCraftTitleHeaderInfo()
         self.titleLabel:setName(tostring(baseTitle))
         self.titleLabel:setHeightToName(0)
         local font = self.titleLabel.font or UIFont.Small
-        self.qolTitleHeaderStatsPanel = measureTitleHeaderPanel(statsText, font)
+        self.qolTitleHeaderStatsPanel = measureTitleHeaderStatsPanel(statsModel, font)
         self.qolTitleHeaderXpPanel = measureTitleHeaderPanel(xpText, font)
         self.qolTitleHeaderHasPanels = self.qolTitleHeaderStatsPanel ~= nil or self.qolTitleHeaderXpPanel ~= nil
         if self.qolTitleHeaderHasPanels then
@@ -1776,10 +2335,21 @@ local function patchCraftTitleHeaderInfo()
             local height = panel.height + (padding * 2)
             self:drawRect(x, y, width, height, 0.32, 0.08, 0.08, 0.08)
             self:drawRectBorder(x, y, width, height, 0.8, 0.75, 0.9, 0.75)
+            local lineHeight = getTextManager():getFontHeight(font)
             local lineY = panelY
-            for line in string.gmatch(panel.text .. "\n", "([^\n]*)\n") do
-                self:drawText(line, panelX, lineY, 1, 1, 1, 1, font)
-                lineY = lineY + getTextManager():getFontHeight(font)
+            if panel.rows then
+                self:drawText(panel.title, panelX, lineY, 1, 1, 1, 1, font)
+                lineY = lineY + lineHeight
+                for _, row in ipairs(panel.rows) do
+                    self:drawText(row.label, panelX, lineY, 1, 1, 1, 1, font)
+                    self:drawTextRight(row.value, panelX + panel.width, lineY, 1, 1, 1, 1, font)
+                    lineY = lineY + lineHeight
+                end
+            else
+                for line in string.gmatch(panel.text .. "\n", "([^\n]*)\n") do
+                    self:drawText(line, panelX, lineY, 1, 1, 1, 1, font)
+                    lineY = lineY + lineHeight
+                end
             end
             panelX = panelX + width + 6
         end
@@ -1813,10 +2383,13 @@ local function patchCraftLogicTitle()
 
         local baseTitle = self.titleLabel.origTitleStr or self.titleLabel.name or self.title or ""
         local lines = {}
-        if isCraftOutputTooltipEnabled() then
-            local statsLine = buildTitleHeaderOutputStatsLine(self.logic)
-            if statsLine and statsLine ~= "" then
-                lines[#lines + 1] = statsLine
+        if isShowStatsEnabled() then
+            local stats = getCraftOutputStats(self.logic)
+            if stats and stats.rows and #stats.rows > 0 then
+                lines[#lines + 1] = stats.title
+                for _, row in ipairs(stats.rows) do
+                    lines[#lines + 1] = row.label .. ": " .. row.value
+                end
             end
         end
 
@@ -1829,6 +2402,104 @@ local function patchCraftLogicTitle()
     end
 
     logDebug("craft recipe title info patch active")
+    return true
+end
+
+local function patchCharacterProtection()
+    pcall(require, "XpSystem/ISUI/ISCharacterProtection")
+    if not ISCharacterProtection or not ISCharacterProtection.render then
+        return false
+    end
+
+    if originalCharacterProtectionRender then
+        return true
+    end
+
+    originalCharacterProtectionRender = ISCharacterProtection.render
+
+    ISCharacterProtection.render = function(self)
+        local previousFooterHeight = self and tonumber(self.qolProtectionFooterHeight) or 0
+        if previousFooterHeight > 0 then
+            self:setHeight(math.max(0, self:getHeight() - previousFooterHeight))
+            self.qolProtectionFooterHeight = 0
+        end
+
+        originalCharacterProtectionRender(self)
+
+        if not isShowStatsEnabled() or not self or not self.char then
+            return
+        end
+
+        local rows, totals = getWornEquipmentModifierRows(self.char)
+        local font = UIFont.Small
+        local textManager = getTextManager and getTextManager() or nil
+        if not textManager or type(textManager.MeasureStringX) ~= "function" or type(textManager.getFontHeight) ~= "function" then
+            return
+        end
+
+        local padding = 6
+        local bottomPadding = 8
+        local columnGap = 16
+        local lineHeight = textManager:getFontHeight(font)
+        local title = getLocalizedText("UI_QoLforSacriel_Protection_TotalWornModifiers", "Total worn modifiers")
+        local contentWidth = textManager:MeasureStringX(font, title)
+        for _, row in ipairs(rows) do
+            local rowWidth = textManager:MeasureStringX(font, row.label) + columnGap + textManager:MeasureStringX(font, row.value)
+            contentWidth = math.max(contentWidth, rowWidth)
+        end
+
+        local bodyPartCount = 0
+        if self.bparts then
+            for _, enabled in pairs(self.bparts) do
+                if enabled then
+                    bodyPartCount = bodyPartCount + 1
+                end
+            end
+        end
+        local baseHeight = (padding + 5) + lineHeight + 6 + (bodyPartCount * lineHeight) + (padding + 5)
+        local footerHeight = lineHeight * (#rows + 1) + (padding * 2) + bottomPadding
+        local finalHeight = baseHeight + footerHeight
+        self:setWidthAndParentWidth(math.max(self:getWidth(), contentWidth + (padding * 2)))
+        self:setHeightAndParentHeight(finalHeight)
+        self.qolProtectionFooterHeight = finalHeight - baseHeight
+
+        local debugSignature = tostring(totals.wornCount)
+            .. "|" .. tostring(totals.combatSpeed)
+            .. "|" .. tostring(totals.runSpeed)
+            .. "|" .. tostring(totals.vision)
+            .. "|" .. tostring(totals.hearing)
+            .. "|" .. tostring(totals.discomfort)
+            .. "|" .. tostring(totals.stompPower)
+        if self.qolProtectionFooterDebugSignature ~= debugSignature then
+            self.qolProtectionFooterDebugSignature = debugSignature
+            logDebug(
+                "protection modifiers calculated: worn=" .. tostring(totals.wornCount)
+                .. ", combat=" .. tostring(totals.combatSpeed)
+                .. ", run=" .. tostring(totals.runSpeed)
+                .. ", vision=" .. tostring(totals.vision)
+                .. ", hearing=" .. tostring(totals.hearing)
+                .. ", discomfort=" .. tostring(totals.discomfort)
+                .. ", stomp=" .. tostring(totals.stompPower)
+            )
+        end
+
+        local panelWidth = contentWidth + (padding * 2)
+        local panelHeight = lineHeight * (#rows + 1) + (padding * 2)
+        local panelX = math.max(0, (self:getWidth() - panelWidth) / 2)
+        local y = baseHeight + padding
+        local x = panelX + padding
+        self:drawRect(panelX, y - padding, panelWidth, panelHeight, 0.32, 0.08, 0.08, 0.08)
+        self:drawRectBorder(panelX, y - padding, panelWidth, panelHeight, 0.8, 0.75, 0.9, 0.75)
+        self:drawText(title, x, y, 1, 1, 1, 1, font)
+        y = y + lineHeight
+        for _, row in ipairs(rows) do
+            self:drawText(row.label, x, y, 1, 1, 1, 1, font)
+            self:drawTextRight(row.value, x + contentWidth, y, 1, 1, 1, 1, font)
+            y = y + lineHeight
+        end
+    end
+
+    logDebug("character protection footer patch active")
     return true
 end
 
@@ -1849,7 +2520,7 @@ local function patchInventoryPane()
     originalDrawItemDetails = ISInventoryPane.drawItemDetails
 
     ISInventoryPane.drawItemDetails = function(self, item, y, xoff, yoff, red)
-        if isExactStatsEnabled()
+        if isShowStatsEnabled()
             and item
             and instanceof
             and instanceof(item, "HandWeapon")
@@ -1904,7 +2575,7 @@ local function patchCraftWidgets()
     ISWidgetOutput.updateScriptValues = function(self, scriptTable)
         originalWidgetOutputUpdateScriptValues(self, scriptTable)
 
-        if not isCraftOutputTooltipEnabled() then
+        if not isShowStatsEnabled() then
             return
         end
         if scriptTable ~= self.primary then
@@ -1921,7 +2592,7 @@ local function patchCraftWidgets()
     ISWidgetInput.updateScriptValues = function(self, scriptTable)
         originalWidgetInputUpdateScriptValues(self, scriptTable)
 
-        if not isCraftOutputTooltipEnabled() then
+        if not isShowStatsEnabled() then
             return
         end
         if self.displayAsOutput ~= true then
@@ -1941,7 +2612,7 @@ local function patchCraftWidgets()
     ISWidgetOutput.updateValues = function(self)
         originalWidgetOutputUpdateValues(self)
 
-        if not isCraftOutputTooltipEnabled() then
+        if not isShowStatsEnabled() then
             return
         end
         if not isOutputBoxWidget(self) then
@@ -1958,7 +2629,7 @@ local function patchCraftWidgets()
     ISWidgetInput.updateValues = function(self)
         originalWidgetInputUpdateValues(self)
 
-        if not isCraftOutputTooltipEnabled() then
+        if not isShowStatsEnabled() then
             return
         end
         if self.displayAsOutput ~= true then
@@ -1988,7 +2659,8 @@ local function tryPatchAll()
     local invTooltipOk = patchInventoryTooltipRenderFallback()
     local titleHeaderOk = patchCraftTitleHeaderInfo()
     local craftLogicTitleOk = patchCraftLogicTitle()
-    return inventoryOk and craftOk and craftLogicOk and fallbackOk and invTooltipOk and titleHeaderOk and craftLogicTitleOk
+    local protectionOk = patchCharacterProtection()
+    return inventoryOk and craftOk and craftLogicOk and fallbackOk and invTooltipOk and titleHeaderOk and craftLogicTitleOk and protectionOk
 end
 
 local function onRetryTick()
