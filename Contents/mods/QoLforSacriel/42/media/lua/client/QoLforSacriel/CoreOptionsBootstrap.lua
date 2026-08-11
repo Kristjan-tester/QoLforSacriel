@@ -2,6 +2,28 @@ local logger = require "QoLforSacriel/Core/Logger"
 local modOptions = require "QoLforSacriel/CoreModOptions"
 
 local registered = false
+local persistedOptionsLoaded = false
+
+local function loadPersistedOptions()
+    if persistedOptionsLoaded then
+        return
+    end
+
+    if not PZAPI
+        or not PZAPI.ModOptions
+        or type(PZAPI.ModOptions.load) ~= "function"
+    then
+        return
+    end
+
+    local ok, err = pcall(PZAPI.ModOptions.load, PZAPI.ModOptions)
+    if not ok then
+        logger.error("Failed to load persisted ModOptions: " .. tostring(err))
+        return
+    end
+
+    persistedOptionsLoaded = true
+end
 
 local function ensureRegistered()
     if registered then
@@ -15,6 +37,7 @@ local function ensureRegistered()
         return modOptions.register(logger)
     end)
     if ok and options then
+        loadPersistedOptions()
         registered = true
     end
 

@@ -25,6 +25,7 @@ local function registerModules()
     local skillFilter = safeRequire("QoLforSacriel/Modules/UIFixes/SkillFilter")
     local waterDepthHints = safeRequire("QoLforSacriel/Modules/UIFixes/WaterDepthHints")
     local heavyLoadHurtFeedback = safeRequire("QoLforSacriel/Modules/UIFixes/HeavyLoadHurtFeedback")
+    local fitnessNutritionIndicator = safeRequire("QoLforSacriel/Modules/UIFixes/FitnessNutritionIndicator")
     local equipmentStatsDisplay = safeRequire("QoLforSacriel/Modules/UIFixes/EquipmentStatsDisplay")
     local craftToolSubmenu = safeRequire("QoLforSacriel/Modules/UIFixes/CraftToolSubmenu")
     local inventoryUpdate = safeRequire("QoLforSacriel/Modules/UIFixes/InventoryUpdate")
@@ -35,6 +36,8 @@ local function registerModules()
     local lightSwitchToggle = safeRequire("QoLforSacriel/Modules/LightSwitchToggle/LightSwitchToggle")
     local nearbyDeviceOff = safeRequire("QoLforSacriel/Modules/NearbyDeviceOff/NearbyDeviceOff")
     local heldBagClimb = safeRequire("QoLforSacriel/Modules/HeldBagClimb/HeldBagClimb")
+    local vehicleEntryAssist = safeRequire("QoLforSacriel/Modules/VehicleEntryAssist/VehicleEntryAssist")
+    local drySelfDivisor = safeRequire("QoLforSacriel/Modules/DrySelf/DrySelfDivisor")
     local vehicleHorn = safeRequire("QoLforSacriel/Modules/VehicleHorn/VehicleHorn")
     local dragDrop = safeRequire("QoLforSacriel/Modules/DragDrop/DragDropFatigue")
     local restSleep = safeRequire("QoLforSacriel/Modules/RestSleep/RestUntilSleepy")
@@ -49,6 +52,9 @@ local function registerModules()
     end
     if heavyLoadHurtFeedback and heavyLoadHurtFeedback.init then
         registry.register("UIFixes.HeavyLoadHurtFeedback", "QoLforSacriel_EnableUIFixes", heavyLoadHurtFeedback.init)
+    end
+    if fitnessNutritionIndicator and fitnessNutritionIndicator.init then
+        registry.register("UIFixes.FitnessNutritionIndicator", "QoLforSacriel_EnableUIFixes", fitnessNutritionIndicator.init)
     end
     if equipmentStatsDisplay and equipmentStatsDisplay.init then
         registry.register("UIFixes.EquipmentStatsDisplay", "QoLforSacriel_EnableUIFixes", equipmentStatsDisplay.init)
@@ -79,6 +85,12 @@ local function registerModules()
     end
     if heldBagClimb and heldBagClimb.init then
         registry.register("HeldBagClimb.Base", "QoLforSacriel_EnableHeldBagClimb", heldBagClimb.init)
+    end
+    if vehicleEntryAssist and vehicleEntryAssist.init then
+        registry.register("VehicleEntryAssist.Base", "QoLforSacriel_EnableVehicleEntryAssist", vehicleEntryAssist.init)
+    end
+    if drySelfDivisor and drySelfDivisor.init then
+        registry.register("DrySelf.WetnessPerUse", "QoLforSacriel_EnableDrySelfDivisor", drySelfDivisor.init)
     end
     if vehicleHorn and vehicleHorn.init then
         registry.register("UIFixes.ExteriorVehicleHorn", "QoLforSacriel_EnableUIFixes", vehicleHorn.init)
