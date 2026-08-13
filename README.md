@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.13
+Current version: v0.14
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -51,6 +51,7 @@ Features:
 	- Restores saved worn backpacks to their original armour slot when toggled
     - No new visuals for hotbar - all is handled via right-click context menu at the moment
     - can be renamed in modoptions (up to 24 characters shows in context menu)
+    - can interact with mannequins
 - Armour discomfort reduction (95%) when not doing complex actions (running, climbing, building stuff) or sleeping/resting
 	- Respects vanilla discomfort cap (sum of all worn items)
 - Find deeper natural water sources in foraging mode (choose target 'water')
@@ -60,7 +61,7 @@ Features:
     - range, default 1 tile radius, customisable
 - Heavy load pain reaction means character cries out in pain when over-encumbered so that it causes loss of health.
     - Sound made only for player notification (zombies don't react).
-- (UPDATED) Detailed stats in tooltips & crafting menu 
+- Detailed stats in tooltips & crafting menu 
     - All weapon stats (and footwear stomping power) visible in crafting menu and inventory tooltip (can be disabled by modoption)
     - All items known stats are shown as numbers (bars are still visible) 
 	- XP gain in crafting menu (depending on your skills, traits and books)
