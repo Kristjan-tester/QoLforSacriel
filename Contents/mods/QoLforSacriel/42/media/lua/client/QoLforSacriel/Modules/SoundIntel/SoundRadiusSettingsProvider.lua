@@ -9,6 +9,7 @@ local DEFAULTS = {
     QoLforSacriel_SoundRadius_RingOpacityPercent = 25,
     QoLforSacriel_SoundRadius_RingCullingMarginPx = 128,
     QoLforSacriel_SoundRadius_ShowRadiusLabel = true,
+    QoLforSacriel_SoundRadius_LabelFont = 1,
 }
 
 local OPTION_KEYS = {
@@ -18,11 +19,23 @@ local OPTION_KEYS = {
     QoLforSacriel_SoundRadius_RingOpacityPercent = "ringOpacityPercent",
     QoLforSacriel_SoundRadius_RingCullingMarginPx = "ringCullingMarginPx",
     QoLforSacriel_SoundRadius_ShowRadiusLabel = "showRadiusLabel",
+    QoLforSacriel_SoundRadius_LabelFont = "radiusLabelFont",
 }
 
 local function clamp(value, low, high)
     local number = math.floor(tonumber(value) or low)
     return math.max(low, math.min(high, number))
+end
+
+local function resolveLabelFont(value)
+    local selected = clamp(value, 1, 3)
+    if selected == 2 then
+        return UIFont.Medium
+    end
+    if selected == 3 then
+        return UIFont.Large
+    end
+    return UIFont.Small
 end
 
 local function resolve(settings, setting)
@@ -46,6 +59,7 @@ local function resolveSettings(settings)
         playerWorldSoundRingOpacityPercent = clamp(resolve(settings, "QoLforSacriel_SoundRadius_RingOpacityPercent"), 5, 80),
         playerWorldSoundRingCullingMarginPx = clamp(resolve(settings, "QoLforSacriel_SoundRadius_RingCullingMarginPx"), 0, 1024),
         showPlayerWorldSoundRadiusLabel = resolve(settings, "QoLforSacriel_SoundRadius_ShowRadiusLabel") == true,
+        playerWorldSoundRadiusLabelFont = resolveLabelFont(resolve(settings, "QoLforSacriel_SoundRadius_LabelFont")),
     }
 end
 

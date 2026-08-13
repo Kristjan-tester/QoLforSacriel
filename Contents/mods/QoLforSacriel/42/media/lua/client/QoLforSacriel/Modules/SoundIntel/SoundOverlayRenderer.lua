@@ -500,6 +500,7 @@ function SoundOverlayRenderer.renderPlayerWorldSoundRing(playerObj, ring, nowMs,
     if config.showPlayerWorldSoundRadiusLabel == true then
         local centerX, centerY = projectWorldPoint(x, y, z)
         local label = tostring(math.floor(rawRadius)) .. " tiles"
+        local labelFont = config.playerWorldSoundRadiusLabelFont or UIFont.Small
         local zDelta = z - playerObj:getZ()
         if zDelta > 0 then
             label = label .. " ^"
@@ -508,9 +509,10 @@ function SoundOverlayRenderer.renderPlayerWorldSoundRing(playerObj, ring, nowMs,
         end
         local textManager = getTextManager and getTextManager() or nil
         if textManager then
-            local labelWidth = textManager:MeasureStringX(UIFont.Small, label)
+            local labelWidth = textManager:MeasureStringX(labelFont, label)
+            local labelHeight = textManager:getFontHeight(labelFont)
             local labelStackOffsetPx = math.max(0, tonumber(ring.labelStackOffsetPx) or 0)
-            textManager:DrawString(UIFont.Small, centerX - (labelWidth / 2), centerY - 18 - labelStackOffsetPx, label, 0.85, 1.0, 0.85, math.max(0.60, alpha))
+            textManager:DrawString(labelFont, centerX - (labelWidth / 2), centerY - labelHeight - 6 - labelStackOffsetPx, label, 0.85, 1.0, 0.85, math.max(0.60, alpha))
         end
     end
 end

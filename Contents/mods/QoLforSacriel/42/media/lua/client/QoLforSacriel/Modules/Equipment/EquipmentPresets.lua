@@ -1,3 +1,6 @@
+require "TimedActions/ISInventoryTransferUtil"
+require "TimedActions/ISWearClothing"
+
 local EquipmentPresets = {}
 
 local installed = false
@@ -454,7 +457,7 @@ local function normalizeBodyLocation(bodyLocation)
         return nil
     end
 
-    if value:find("[^%w_%-]", 1, false) then
+    if value:find("[^%w_%-:]", 1, false) then
         return nil
     end
 
@@ -550,6 +553,23 @@ end
 local function getAddAllCurrentProtectiveTooltip()
     return getTextOrNull("UI_QoLforSacriel_EquipmentAddAllCurrentProtective_Tooltip")
     or "adds currently worn protective gear and equipped weapon-category items to this preset, clearing anything that was here before"
+end
+
+local function getMannequinUnavailableTooltip(reason)
+    local key = "UI_QoLforSacriel_EquipmentMannequinUnavailable_" .. tostring(reason)
+    return getTextOrNull(key) or "Action unavailable in current context."
+end
+
+local function getStoreProtectiveArmorLabel()
+    return getTextOrNull("UI_QoLforSacriel_EquipmentStoreProtectiveArmor") or "Store Protective Armor"
+end
+
+local function getWearProtectiveArmorLabel()
+    return getTextOrNull("UI_QoLforSacriel_EquipmentWearProtectiveArmor") or "Wear Protective Armor"
+end
+
+local function getAddPresetToMannequinLabel()
+    return getTextOrNull("UI_QoLforSacriel_EquipmentAddPresetToMannequin") or "Add preset to mannequin"
 end
 
 local function resolveActualItems(items)
@@ -685,10 +705,29 @@ local function detectCurrentBodyLocation(playerObj, item)
         return nil
     end
 
+    if wornItems.getLocation then
+        local location = normalizeBodyLocation(wornItems:getLocation(item))
+        if location then
+            return location
+        end
+    end
+
     for i = 0, wornItems:size() - 1 do
         local worn = wornItems:get(i)
         if worn and worn.getItem and worn:getItem() == item and worn.getLocation then
             return normalizeBodyLocation(worn:getLocation())
+        end
+
+        if wornItems.getItemByIndex and wornItems:getItemByIndex(i) == item then
+            if item.getBodyLocation then
+                local bodyLocation = normalizeBodyLocation(item:getBodyLocation())
+                if bodyLocation then
+                    return bodyLocation
+                end
+            end
+            if item.canBeEquipped then
+                return normalizeBodyLocation(item:canBeEquipped())
+            end
         end
     end
 
@@ -1064,6 +1103,22 @@ local function findWornItemByTypeAndLocation(playerObj, fullType, bodyLocation)
     return nil
 end
 
+local function getPlayerWornItemAtLocation(playerObj, bodyLocation)
+    local normalizedBodyLocation = normalizeBodyLocation(bodyLocation)
+    if not playerObj or not normalizedBodyLocation then
+        return nil
+    end
+
+    if ItemBodyLocation and ItemBodyLocation.get and ResourceLocation and ResourceLocation.of then
+        local itemBodyLocation = ItemBodyLocation.get(ResourceLocation.of(normalizedBodyLocation))
+        if itemBodyLocation then
+            return playerObj:getWornItem(itemBodyLocation)
+        end
+    end
+
+    return playerObj:getWornItem(normalizedBodyLocation)
+end
+
 local function isBodyLocationSatisfied(playerObj, fullType, bodyLocation)
     return findWornItemByTypeAndLocation(playerObj, fullType, bodyLocation) ~= nil
 end
@@ -1219,6 +1274,13 @@ local function isWearableItem(item)
         end
     end
 
+    if item.canBeEquipped then
+        local okEquippable, bodyLocation = pcall(item.canBeEquipped, item)
+        if okEquippable and bodyLocation and tostring(bodyLocation) ~= "" then
+            return true
+        end
+    end
+
     if item.isClothing then
         local okClothing, clothing = pcall(item.isClothing, item)
         if okClothing and clothing == true then
@@ -1243,7 +1305,313 @@ local function isWearableItem(item)
     return false
 end
 
-local function queueEquipByType(playerObj, fullType, handMode, logger)
+local function isMannequinCompatibleItem(item, bodyLocation)
+    local normalizedBodyLocation = normalizeBodyLocation(bodyLocation)
+    if not item or not normalizedBodyLocation or getItemBodyLocation(item) ~= normalizedBodyLocation then
+        return false
+    end
+
+    if item.IsClothing and item:IsClothing() then
+        return true
+    end
+
+    return item.getCategory and item:getCategory() == "Container"
+end
+
+local function isProtectiveClothingItem(item)
+    return item and item.IsClothing and item:IsClothing() and isProtectiveGearItem(item)
+end
+
+local function getMannequinEntryBodyLocation(playerObj, entry)
+    local savedBodyLocation = getEntryBodyLocation(entry)
+    if savedBodyLocation then
+        return savedBodyLocation
+    end
+
+    local fullType = getEntryFullType(entry)
+    local item = findInventoryItemByType(playerObj, fullType)
+    return getItemBodyLocation(item)
+end
+
+local function logMannequinDebug(logger, message)
+    if logger and logger.debug then
+        logger.debug("Equipment preset mannequin: " .. message)
+    end
+end
+
+local function isMannequinCompatibleEntry(playerObj, entry)
+    return getEntryFullType(entry) ~= nil and getEntryFullType(entry) ~= "" and getMannequinEntryBodyLocation(playerObj, entry) ~= nil
+end
+
+local function findUnequippedItemForMannequin(playerObj, fullType, bodyLocation)
+    if not playerObj or not fullType or not bodyLocation then
+        return nil
+    end
+
+    local inventory = playerObj:getInventory()
+    if not inventory then
+        return nil
+    end
+
+    local items = inventory:getAllEvalRecurse(function(item)
+        return item and item.getFullType and item:getFullType() == fullType
+    end)
+    if not items then
+        return nil
+    end
+
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item and not playerObj:isEquipped(item) and isMannequinCompatibleItem(item, bodyLocation) then
+            return item
+        end
+    end
+
+    return nil
+end
+
+local function findPresetItemForMannequin(playerObj, fullType, bodyLocation)
+    local item = findUnequippedItemForMannequin(playerObj, fullType, bodyLocation)
+    if item then
+        return item
+    end
+
+    item = findWornItemByTypeAndLocation(playerObj, fullType, bodyLocation)
+    if item and isMannequinCompatibleItem(item, bodyLocation) then
+        return item
+    end
+
+    return nil
+end
+
+local function findMannequinWornItemByTypeAndLocation(mannequin, fullType, bodyLocation)
+    local normalizedBodyLocation = normalizeBodyLocation(bodyLocation)
+    if not mannequin or not normalizedBodyLocation or not mannequin.getWornItems then
+        return nil
+    end
+
+    local wornItems = mannequin:getWornItems()
+    if not wornItems then
+        return nil
+    end
+
+    for i = 0, wornItems:size() - 1 do
+        local worn = wornItems:get(i)
+        local item = worn and worn.getItem and worn:getItem() or nil
+        local location = worn and worn.getLocation and normalizeBodyLocation(worn:getLocation()) or nil
+        if location == normalizedBodyLocation and item and item.getFullType and item:getFullType() == fullType then
+            return item
+        end
+    end
+
+    return nil
+end
+
+local function isUsableMannequin(object)
+    return type(instanceof) == "function" and instanceof(object, "IsoMannequin")
+        and object.getContainer and object:getContainer()
+        and object.getSquare and object:getSquare()
+end
+
+local function resolveMannequin(worldobjects)
+    if not worldobjects then
+        return nil
+    end
+
+    for _, worldObject in ipairs(worldobjects) do
+        if isUsableMannequin(worldObject) then
+            return worldObject
+        end
+
+        local square = worldObject and worldObject.getSquare and worldObject:getSquare() or nil
+        local objects = square and square.getObjects and square:getObjects() or nil
+        if objects then
+            for index = 0, objects:size() - 1 do
+                local object = objects:get(index)
+                if isUsableMannequin(object) then
+                    return object
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function resolveMannequinFromInventoryContext(items)
+    if not items then
+        return nil
+    end
+
+    local function resolveFromContainer(container)
+        local parent = container and container.getParent and container:getParent() or nil
+        if isUsableMannequin(parent) then
+            return parent
+        end
+        return nil
+    end
+
+    for _, selected in ipairs(items) do
+        local mannequin = resolveFromContainer(selected)
+        if mannequin then
+            return mannequin
+        end
+
+        local container = selected and selected.getContainer and selected:getContainer() or nil
+        mannequin = resolveFromContainer(container)
+        if mannequin then
+            return mannequin
+        end
+
+        container = selected and selected.getItemContainer and selected:getItemContainer() or nil
+        mannequin = resolveFromContainer(container)
+        if mannequin then
+            return mannequin
+        end
+
+        local wrappedItems = selected and selected.items or nil
+        if type(wrappedItems) == "table" then
+            mannequin = resolveMannequinFromInventoryContext(wrappedItems)
+            if mannequin then
+                return mannequin
+            end
+        end
+    end
+
+    return nil
+end
+
+local function canUseMannequinTransfers(playerObj, mannequin)
+    if not playerObj or playerObj:isDead() or playerObj:getVehicle() then
+        return false
+    end
+    if isGamePaused and isGamePaused() then
+        return false
+    end
+    if not mannequin or not mannequin.getContainer or not mannequin:getContainer() or not mannequin.getSquare or not mannequin:getSquare() then
+        return false
+    end
+    return ISTimedActionQueue and ISInventoryTransferUtil and ISInventoryTransferUtil.newInventoryTransferAction and ISWearClothing
+end
+
+local function walkToMannequin(playerObj, mannequin)
+    return luautils and luautils.walkAdj and luautils.walkAdj(playerObj, mannequin:getSquare()) == true
+end
+
+local function getMannequinWornItems(mannequin, predicate)
+    local items = {}
+    local wornItems = mannequin and mannequin.getWornItems and mannequin:getWornItems() or nil
+    if not wornItems then
+        return items
+    end
+
+    for index = 0, wornItems:size() - 1 do
+        local item = getWornItemAt(wornItems, index)
+        if item and (not predicate or predicate(item)) then
+            items[#items + 1] = item
+        end
+    end
+
+    return items
+end
+
+local function queueProtectiveArmorToMannequin(playerObj, mannequin, logger)
+    if not canUseMannequinTransfers(playerObj, mannequin) or not walkToMannequin(playerObj, mannequin) then
+        logMannequinDebug(logger, "store protective rejected: interaction unavailable")
+        return
+    end
+
+    local stored = 0
+    local wornItems = playerObj:getWornItems()
+    for index = 0, wornItems:size() - 1 do
+        local item = getWornItemAt(wornItems, index)
+        if isProtectiveClothingItem(item) and item:getContainer() then
+            ISInventoryPaneContextMenu.unequipItem(item, playerObj:getPlayerNum())
+            ISTimedActionQueue.add(ISInventoryTransferUtil.newInventoryTransferAction(playerObj, item, item:getContainer(), mannequin:getContainer()))
+            stored = stored + 1
+            logMannequinDebug(logger, "store protective queued: type=" .. tostring(item:getFullType()))
+        end
+    end
+
+    logMannequinDebug(logger, "store protective complete: queued=" .. tostring(stored))
+end
+
+local function queueProtectiveArmorFromMannequin(playerObj, mannequin, logger)
+    if not canUseMannequinTransfers(playerObj, mannequin) or not walkToMannequin(playerObj, mannequin) then
+        logMannequinDebug(logger, "wear protective rejected: interaction unavailable")
+        return
+    end
+
+    local wornItems = getMannequinWornItems(mannequin, isProtectiveClothingItem)
+    for index = 1, #wornItems do
+        local item = wornItems[index]
+        ISInventoryPaneContextMenu.transferIfNeeded(playerObj, item)
+        ISTimedActionQueue.add(ISWearClothing:new(playerObj, item, 50))
+        logMannequinDebug(logger, "wear protective queued: type=" .. tostring(item:getFullType()))
+    end
+
+    logMannequinDebug(logger, "wear protective complete: queued=" .. tostring(#wornItems))
+end
+
+local function queuePresetToMannequin(playerObj, mannequin, presetIndex, logger)
+    if not canUseMannequinTransfers(playerObj, mannequin) or not walkToMannequin(playerObj, mannequin) then
+        logMannequinDebug(logger, "put rejected: canTransfer=" .. tostring(canUseMannequinTransfers(playerObj, mannequin)) .. ", adjacent=" .. tostring(walkToMannequin(playerObj, mannequin)))
+        return
+    end
+
+    local preset = getPresetStore(playerObj)[presetIndex]
+    local transferred = 0
+    local skipped = 0
+    for i = 1, #preset do
+        local entry = preset[i]
+        local fullType = getEntryFullType(entry)
+        local bodyLocation = getMannequinEntryBodyLocation(playerObj, entry)
+        local item = isMannequinCompatibleEntry(playerObj, entry) and findPresetItemForMannequin(playerObj, fullType, bodyLocation) or nil
+        local sourceContainer = item and item:getContainer() or nil
+        if item and sourceContainer then
+            if playerObj:isEquipped(item) then
+                ISInventoryPaneContextMenu.unequipItem(item, playerObj:getPlayerNum())
+            end
+            ISTimedActionQueue.add(ISInventoryTransferUtil.newInventoryTransferAction(playerObj, item, sourceContainer, mannequin:getContainer()))
+            transferred = transferred + 1
+            logMannequinDebug(logger, "put queued: type=" .. tostring(fullType) .. ", location=" .. tostring(bodyLocation) .. ", source=" .. tostring(sourceContainer:getType()))
+        else
+            skipped = skipped + 1
+            logMannequinDebug(logger, "put skipped: type=" .. tostring(fullType) .. ", savedLocation=" .. tostring(getEntryBodyLocation(entry)) .. ", resolvedLocation=" .. tostring(bodyLocation) .. ", compatible=" .. tostring(isMannequinCompatibleEntry(playerObj, entry)) .. ", sourceItem=" .. tostring(item ~= nil))
+        end
+    end
+
+    if logger and logger.debug then
+        logger.debug("Equipment preset mannequin put: preset=" .. tostring(presetIndex) .. ", transferred=" .. tostring(transferred) .. ", skipped=" .. tostring(skipped))
+    end
+end
+
+local function getMannequinPresetAvailability(playerObj, presetIndex, logger)
+    local preset = getPresetStore(playerObj)[presetIndex]
+    local hasCompatible = false
+    local hasPlayerItem = false
+
+    for i = 1, #preset do
+        local entry = preset[i]
+        local fullType = getEntryFullType(entry)
+        local savedBodyLocation = getEntryBodyLocation(entry)
+        local bodyLocation = getMannequinEntryBodyLocation(playerObj, entry)
+        local compatible = isMannequinCompatibleEntry(playerObj, entry)
+        if compatible then
+            hasCompatible = true
+            local playerItem = findPresetItemForMannequin(playerObj, fullType, bodyLocation)
+            hasPlayerItem = hasPlayerItem or playerItem ~= nil
+            logMannequinDebug(logger, "availability: preset=" .. tostring(presetIndex) .. ", type=" .. tostring(fullType) .. ", savedLocation=" .. tostring(savedBodyLocation) .. ", resolvedLocation=" .. tostring(bodyLocation) .. ", playerItem=" .. tostring(playerItem ~= nil))
+        else
+            logMannequinDebug(logger, "availability skipped: preset=" .. tostring(presetIndex) .. ", type=" .. tostring(fullType) .. ", savedLocation=" .. tostring(savedBodyLocation) .. ", resolvedLocation=" .. tostring(bodyLocation))
+        end
+    end
+
+    logMannequinDebug(logger, "availability summary: preset=" .. tostring(presetIndex) .. ", compatible=" .. tostring(hasCompatible) .. ", playerItem=" .. tostring(hasPlayerItem))
+    return hasCompatible, hasPlayerItem
+end
+
+local function queueEquipByType(playerObj, fullType, handMode, bodyLocation, logger)
     local item = findInventoryItemByType(playerObj, fullType)
     if not item then
         if logger and logger.debug then
@@ -1289,7 +1657,7 @@ local function queueEquipByType(playerObj, fullType, handMode, logger)
             return true
         end
 
-        local occupying = playerObj:getWornItem(normalizedBodyLocation)
+        local occupying = getPlayerWornItemAtLocation(playerObj, normalizedBodyLocation)
         if occupying and occupying ~= item then
             ISInventoryPaneContextMenu.unequipItem(occupying, playerNum)
         end
@@ -1396,7 +1764,7 @@ local function togglePreset(playerObj, presetIndex, logger)
             if unequip then
                 ok = queueUnequipByType(playerObj, fullType, logger)
             else
-                ok = queueEquipByType(playerObj, fullType, handMode, logger)
+                ok = queueEquipByType(playerObj, fullType, handMode, bodyLocation, logger)
             end
             if ok then
                 changed = changed + 1
@@ -1419,6 +1787,8 @@ local function togglePreset(playerObj, presetIndex, logger)
     logger.debug("Equipment preset " .. tostring(presetIndex) .. " toggled; mode=" .. (unequip and "unequip" or "equip") .. ", actions=" .. tostring(changed))
 end
 
+local onMannequinContext
+
 local function onInventoryContext(playerIndex, context, items, settings, logger)
     if settings.isEnabled("QoLforSacriel_EnableEquipment") ~= true then
         return
@@ -1429,6 +1799,12 @@ local function onInventoryContext(playerIndex, context, items, settings, logger)
 
     local playerObj = getSpecificPlayer(playerIndex)
     if not playerObj or not context then
+        return
+    end
+
+    local mannequin = resolveMannequinFromInventoryContext(items)
+    if mannequin then
+        onMannequinContext(playerObj, context, mannequin, settings, logger, "container")
         return
     end
 
@@ -1476,6 +1852,67 @@ local function onInventoryContext(playerIndex, context, items, settings, logger)
             closeContextMenu(context)
         end, i)
     end
+end
+
+onMannequinContext = function(playerObj, context, mannequin, settings, logger, source)
+    local canTransfer = canUseMannequinTransfers(playerObj, mannequin)
+    local mannequinHasProtectiveArmor = #getMannequinWornItems(mannequin, isProtectiveClothingItem) > 0
+    if settings.get("QoLforSacriel_DebugLogs") == true then
+        logMannequinDebug(logger, "menu opened: source=" .. tostring(source) .. ", canTransfer=" .. tostring(canTransfer) .. ", dead=" .. tostring(playerObj:isDead()) .. ", vehicle=" .. tostring(playerObj:getVehicle() ~= nil) .. ", adjacent=" .. tostring(walkToMannequin(playerObj, mannequin)) .. ", mannequinHasProtectiveArmor=" .. tostring(mannequinHasProtectiveArmor))
+    end
+
+    local armorLabel = mannequinHasProtectiveArmor and getWearProtectiveArmorLabel() or getStoreProtectiveArmorLabel()
+    local armorOption = context:addOption(armorLabel, playerObj, function(player, target, hasProtectiveArmor)
+        if hasProtectiveArmor then
+            queueProtectiveArmorFromMannequin(player, target, logger)
+        else
+            queueProtectiveArmorToMannequin(player, target, logger)
+        end
+        closeContextMenu(context)
+    end, mannequin, mannequinHasProtectiveArmor)
+    if not canTransfer then
+        armorOption.notAvailable = true
+        attachOptionTooltip(armorOption, getMannequinUnavailableTooltip("interaction"))
+    end
+
+    local menuOption = context:addOption(getPresetMenuLabel())
+    local subMenu = context:getNew(context)
+    context:addSubMenu(menuOption, subMenu)
+
+    for i = 1, getConfiguredPresetCount(settings) do
+        local presetOption = subMenu:addOption(getPresetEntryLabel(i, settings))
+        local presetSubMenu = context:getNew(context)
+        context:addSubMenu(presetOption, presetSubMenu)
+        local hasCompatible, hasPlayerItem = getMannequinPresetAvailability(playerObj, i, settings.get("QoLforSacriel_DebugLogs") == true and logger or nil)
+
+        local putOption = presetSubMenu:addOption(getAddPresetToMannequinLabel(), playerObj, function(player, target, presetIndex)
+            queuePresetToMannequin(player, target, presetIndex, logger)
+            closeContextMenu(context)
+        end, mannequin, i)
+        if not canTransfer or not hasCompatible or not hasPlayerItem then
+            putOption.notAvailable = true
+            attachOptionTooltip(putOption, getMannequinUnavailableTooltip(not canTransfer and "interaction" or (not hasCompatible and "compatible" or "playerItem")))
+        end
+    end
+end
+
+local function onWorldObjectContext(playerIndex, context, worldobjects, test, settings, logger)
+    if test or settings.isEnabled("QoLforSacriel_EnableEquipment") ~= true
+        or settings.get("QoLforSacriel_Equipment_EnablePresets") ~= true
+    then
+        return
+    end
+
+    local playerObj = getSpecificPlayer(playerIndex)
+    local mannequin = resolveMannequin(worldobjects)
+    if not playerObj or not mannequin then
+        if settings.get("QoLforSacriel_DebugLogs") == true then
+            logMannequinDebug(logger, "menu skipped: player=" .. tostring(playerObj ~= nil) .. ", mannequin=" .. tostring(mannequin ~= nil) .. ", worldObjects=" .. tostring(worldobjects and #worldobjects or 0))
+        end
+        return
+    end
+
+    onMannequinContext(playerObj, context, mannequin, settings, logger, "world")
 end
 
 local function getPresetIndexFromKey(key, settings, logger)
@@ -1572,6 +2009,15 @@ function EquipmentPresets.init(settings, logger)
         end)
         if not ok then
             logger.error("Equipment.Presets context error: " .. tostring(err))
+        end
+    end)
+
+    Events.OnFillWorldObjectContextMenu.Add(function(playerIndex, context, worldobjects, test)
+        local ok, err = pcall(function()
+            onWorldObjectContext(playerIndex, context, worldobjects, test, settings, logger)
+        end)
+        if not ok then
+            logger.error("Equipment.Presets mannequin context error: " .. tostring(err))
         end
     end)
 
