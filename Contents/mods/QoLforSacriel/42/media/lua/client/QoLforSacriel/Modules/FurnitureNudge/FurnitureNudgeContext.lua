@@ -54,18 +54,17 @@ local function getDisableReasonTooltip(candidate)
     return "UI_QoLforSacriel_FurnitureNudgeUnavailable", "No valid nudge directions."
 end
 
-    local function getRootLabel(candidate)
-        if candidate and candidate.displayName and candidate.displayName ~= "" then
-            local pattern = getLabel("UI_QoLforSacriel_FurnitureNudgeNamed", "Nudge - %1")
-            pattern = pattern:gsub("%%1%$s", candidate.displayName)
-            pattern = pattern:gsub("%%1", candidate.displayName)
-            if pattern == "Nudge - %1$s" or pattern == "Nudge - %1" then
-                return "Nudge - " .. candidate.displayName
-            end
-            return pattern
+local function getRootLabel(candidate)
+    if candidate and candidate.displayName and candidate.displayName ~= "" then
+        local key = "UI_QoLforSacriel_FurnitureNudgeNamed"
+        local label = getText and getText(key, candidate.displayName)
+        if label and label ~= "" and label ~= key then
+            return label
         end
-        return getLabel("UI_QoLforSacriel_FurnitureNudge", "Nudge")
+        return "Nudge - " .. candidate.displayName
     end
+    return getLabel("UI_QoLforSacriel_FurnitureNudge", "Nudge")
+end
 
 local function logDisableReason(settings, logger, reason, candidate)
     if not logger or not settings or settings.get("QoLforSacriel_DebugLogs") ~= true then
@@ -197,7 +196,7 @@ local function installMenuHook(settings, logger)
                 return
             end
 
-                local root = context:addOption(getRootLabel(candidate))
+            local root = context:addOption(getRootLabel(candidate))
             local subMenu = context:getNew(context)
             context:addSubMenu(root, subMenu)
 

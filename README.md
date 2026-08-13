@@ -31,12 +31,14 @@ Features:
     - Footsteps only make sound with probability for example, and crouch walking and running is same loudness (probably bug in vanilla). 
     - UPDATED to include world objects (excluding zombies), though not 100% sure if all animals will make rings.
     - Audio rings with higher radius from same source have priority now, concurrent ring radius labels offset for visibility
+	- Ring radius label text size can be set to Small, Medium, or Large in ModOptions.
 - Car horn can be honked from outside when door is open or window open/broken. Both radial menu and key-bind
 - Audio direction visualiser (default off), Customisable categories for sounds groups to track, fps drop fixed (let me know if you experience it).
 	- Loudness scales the size of the arrow 
  	- Distance changes the colour: green is far away, Red is close 
 - Filter skills panel, on the fly:
 	- highlights recently improved skills with 'green' texts, within last 60 in-game minutes (by default)
+	- hover a green skill name to see the observed recent XP gains and their in-game ages
 	- filter to hide 0xp skills
 	- filter to hide all below 2 levels of skill (by default) - still shows recent skills even if below that limit
 - Rest until sleepy, speeds up time until player can sleep:
@@ -46,6 +48,7 @@ Features:
 - Armour presets (1..8, default 2) with custom key-binds (default: ctrl+F1..8) and 'add all current armour/weapons' function:
     - Any item can be added manually to preset.
     - Remembers held weapons hand preference, and armour slots
+	- Restores saved worn backpacks to their original armour slot when toggled
     - No new visuals for hotbar - all is handled via right-click context menu at the moment
     - can be renamed in modoptions (up to 24 characters shows in context menu)
 - Armour discomfort reduction (95%) when not doing complex actions (running, climbing, building stuff) or sleeping/resting

@@ -5,8 +5,10 @@ local trackingInstalled = false
 local originalLoadPerk = nil
 local originalCreateChildren = nil
 local originalRender = nil
+local originalSetVisible = nil
 
 require "ISUI/ISComboBox"
+require "ISUI/ISPanel"
 
 local UI_BORDER_SPACING = 10
 local FONT_HGT_SMALL = getTextManager():getFontHeight(UIFont.Small)
@@ -17,6 +19,7 @@ local MODE_HIDE_ZERO_XP = 2
 local MODE_MIN_LEVEL_OR_RECENT = 3
 local MODE_DATA_KEY = "QoLforSacriel_SkillFilterMode"
 local SKILL_FILTER_HEADER_HGT = BUTTON_HGT + UI_BORDER_SPACING
+local MAX_RECENT_XP_SAMPLES_PER_PERK = 20
 
 local xpBaselinesByPlayer = {}
 local recentXpByPlayer = {}
@@ -98,20 +101,56 @@ local function getWorldAgeHours()
     return gameTime:getWorldAgeHours()
 end
 
-local function isRecentXp(playerIndex, perkType, settings)
-    local recentForPlayer = recentXpByPlayer[playerIndex]
-    local gainedAtHours = recentForPlayer and recentForPlayer[perkType] or nil
-    local nowHours = getWorldAgeHours()
-    if not gainedAtHours or not nowHours then
-        return false
+local function getRealTimestamp()
+    if not getTimestamp then
+        return nil
+    end
+    return getTimestamp()
+end
+
+local function formatRealElapsed(nowTimestamp, gainedAtTimestamp)
+    if not nowTimestamp or not gainedAtTimestamp then
+        return getTextOrNull("UI_QoLforSacriel_SkillFilterRecentXpTooltipRealTimeUnavailable") or "real time unavailable"
     end
 
-    local ageMinutes = (nowHours - gainedAtHours) * 60
-    if ageMinutes < 0 or ageMinutes > getRecentMinutes(settings) then
-        recentForPlayer[perkType] = nil
-        return false
+    local elapsedSeconds = math.max(0, math.floor((nowTimestamp - gainedAtTimestamp) + 0.5))
+    if elapsedSeconds < 60 then
+        return tostring(elapsedSeconds) .. " sec"
     end
-    return true
+
+    return tostring(math.floor(elapsedSeconds / 60)) .. " min"
+end
+
+local function getRecentXpSamples(playerIndex, perkType, settings)
+    local recentForPlayer = recentXpByPlayer[playerIndex]
+    local samples = recentForPlayer and recentForPlayer[perkType] or nil
+    local nowHours = getWorldAgeHours()
+    if type(samples) ~= "table" or not nowHours then
+        return nil
+    end
+
+    local retained = {}
+    local recentMinutes = getRecentMinutes(settings)
+    for index = 1, #samples do
+        local sample = samples[index]
+        local ageMinutes = sample and sample.gainedAtHours and (nowHours - sample.gainedAtHours) * 60 or nil
+        if ageMinutes and ageMinutes >= 0 and ageMinutes <= recentMinutes then
+            retained[#retained + 1] = sample
+        end
+    end
+
+    if #retained == 0 then
+        recentForPlayer[perkType] = nil
+        return nil
+    end
+
+    recentForPlayer[perkType] = retained
+    return retained
+end
+
+local function isRecentXp(playerIndex, perkType, settings)
+    local samples = getRecentXpSamples(playerIndex, perkType, settings)
+    return samples ~= nil and #samples > 0
 end
 
 local function shouldIncludePerk(self, perk, mode, settings)
@@ -152,6 +191,134 @@ local function clearProgressBars(self)
     end
     self.progressBars = {}
     self.progressBarLoaded = false
+end
+
+local function removeRecentXpTooltip(self)
+    if self.tooltip then
+        self.tooltip:setVisible(false)
+        self.tooltip:removeFromUIManager()
+        self.tooltip = nil
+    end
+    self.message = nil
+end
+
+local function buildRecentXpTooltip(playerIndex, perkType, settings)
+    local samples = getRecentXpSamples(playerIndex, perkType, settings)
+    local nowHours = getWorldAgeHours()
+    local nowTimestamp = getRealTimestamp()
+    if not samples or not nowHours then
+        return nil
+    end
+
+    local lines = { getTextOrNull("UI_QoLforSacriel_SkillFilterRecentXpTooltipTitle") or "Recent XP" }
+    local total = 0
+    for index = 1, #samples do
+        local sample = samples[index]
+        local amount = tonumber(sample.amount) or 0
+        local gameAgeMinutes = math.max(0, math.floor(((nowHours - sample.gainedAtHours) * 60) + 0.5))
+        local realElapsed = formatRealElapsed(nowTimestamp, sample.gainedAtTimestamp)
+        total = total + amount
+        local xpLabel = getTextOrNull("UI_QoLforSacriel_SkillFilterRecentXpTooltipXp") or "XP"
+        local agoLabel = getTextOrNull("UI_QoLforSacriel_SkillFilterRecentXpTooltipAgo") or "ago"
+        local gameMinutesLabel = getTextOrNull("UI_QoLforSacriel_SkillFilterRecentXpTooltipGameMinutes") or "game min"
+        lines[#lines + 1] = "+" .. string.format("%.2f", amount) .. " " .. xpLabel
+            .. " (" .. realElapsed .. " " .. agoLabel .. "; " .. tostring(gameAgeMinutes) .. " " .. gameMinutesLabel .. ")"
+    end
+
+    local totalLabel = getTextOrNull("UI_QoLforSacriel_SkillFilterRecentXpTooltipTotal") or "Total"
+    local xpLabel = getTextOrNull("UI_QoLforSacriel_SkillFilterRecentXpTooltipXp") or "XP"
+    lines[#lines + 1] = totalLabel .. ": +" .. string.format("%.2f", total) .. " " .. xpLabel
+    return table.concat(lines, " <LINE>")
+end
+
+local RecentXpLabelHover = ISPanel:derive("QoLforSacriel_RecentXpLabelHover")
+
+function RecentXpLabelHover:render()
+    if self.tooltip and (self.tooltip:isMouseOver() or not self:isMouseOver()) then
+        removeRecentXpTooltip(self)
+    end
+    if self.message then
+        if not self.tooltip then
+            self.tooltip = ISToolTip:new()
+            self.tooltip:initialise()
+            self.tooltip:addToUIManager()
+            self.tooltip:setOwner(self)
+        end
+        self.tooltip.description = self.message
+        self.tooltip:setDesiredPosition(self:getAbsoluteX(), self:getAbsoluteY() + self:getHeight() + 8)
+    end
+end
+
+function RecentXpLabelHover:onMouseMove(dx, dy)
+    if not self:isMouseOver() then
+        self:onMouseMoveOutside(dx, dy)
+        return
+    end
+    self.message = buildRecentXpTooltip(self.playerIndex, self.perkType, self.settings)
+end
+
+function RecentXpLabelHover:onMouseMoveOutside(dx, dy)
+    removeRecentXpTooltip(self)
+end
+
+function RecentXpLabelHover:new(x, y, width, height, playerIndex, perkType, settings)
+    local panel = ISPanel:new(x, y, width, height)
+    setmetatable(panel, self)
+    self.__index = self
+    panel.playerIndex = playerIndex
+    panel.perkType = perkType
+    panel.settings = settings
+    panel.message = nil
+    panel.tooltip = nil
+    panel:noBackground()
+    return panel
+end
+
+local function clearRecentXpLabelHovers(self)
+    if not self.qolRecentXpLabelHovers then
+        return
+    end
+    for _, hover in pairs(self.qolRecentXpLabelHovers) do
+        removeRecentXpTooltip(hover)
+        self:removeChild(hover)
+    end
+    self.qolRecentXpLabelHovers = {}
+end
+
+local function updateRecentXpLabelHover(self, perkType, x, y, width, settings, activeHovers)
+    if not self.qolRecentXpLabelHovers then
+        self.qolRecentXpLabelHovers = {}
+    end
+
+    local key = tostring(perkType)
+    local hover = self.qolRecentXpLabelHovers[key]
+    if not hover then
+        hover = RecentXpLabelHover:new(x, y, width, BUTTON_HGT, self.playerNum or 0, perkType, settings)
+        hover:initialise()
+        self:addChild(hover)
+        self.qolRecentXpLabelHovers[key] = hover
+    end
+
+    hover:setX(x)
+    hover:setY(y)
+    hover:setWidth(width)
+    hover:setHeight(BUTTON_HGT)
+    hover.settings = settings
+    hover:setVisible(true)
+    activeHovers[key] = true
+end
+
+local function removeInactiveRecentXpLabelHovers(self, activeHovers)
+    if not self.qolRecentXpLabelHovers then
+        return
+    end
+    for key, hover in pairs(self.qolRecentXpLabelHovers) do
+        if activeHovers[key] ~= true then
+            removeRecentXpTooltip(hover)
+            self:removeChild(hover)
+            self.qolRecentXpLabelHovers[key] = nil
+        end
+    end
 end
 
 local function rebuildSkillLayout(self)
@@ -197,6 +364,7 @@ local function rebuildSkillLayout(self)
     end
 
     clearProgressBars(self)
+    clearRecentXpLabelHovers(self)
     self.reloadSkillBar = true
 end
 
@@ -335,6 +503,7 @@ local function renderWithRecentXpHighlights(self, settings)
 
     local left = UI_BORDER_SPACING * 2 + BUTTON_HGT + 1
     local fontOffset = (BUTTON_HGT - FONT_HGT_SMALL) / 2
+    local activeHovers = {}
     for index, parentPerk in ipairs(self.sorted) do
         local perkList = self.perks[parentPerk:getType()]
         self:drawText(parentPerk:getName(), left, y + fontOffset, 1, 1, 1, 1, UIFont.Small)
@@ -356,6 +525,9 @@ local function renderWithRecentXpHighlights(self, settings)
                 end
                 if recentSkillNames[perk:getName()] then
                     r, g, b = 0.4, 1, 0.4
+                    local nameX = left + UI_BORDER_SPACING * 2
+                    local nameWidth = getTextManager():MeasureStringX(UIFont.Small, perk:getName())
+                    updateRecentXpLabelHover(self, perkType, nameX, y, nameWidth, settings, activeHovers)
                 end
                 self:drawText(perk:getName(), left + UI_BORDER_SPACING * 2, y + fontOffset, r, g, b, 1, UIFont.Small)
 
@@ -383,6 +555,7 @@ local function renderWithRecentXpHighlights(self, settings)
         end
         y = y + UI_BORDER_SPACING
     end
+    removeInactiveRecentXpLabelHovers(self, activeHovers)
     y = y + 1
 
     local skillPointSize = math.floor((FONT_HGT_SMALL + 6) / 2)
@@ -417,6 +590,7 @@ local function updateXpTracking(playerObj, settings)
     end
 
     local nowHours = getWorldAgeHours()
+    local nowTimestamp = getRealTimestamp()
     local xp = playerObj:getXp()
     if not nowHours or not xp then
         return
@@ -433,7 +607,19 @@ local function updateXpTracking(playerObj, settings)
             local currentXp = xp:getXP(perkType)
             local previousXp = baselines[perkType]
             if previousXp ~= nil and currentXp > previousXp then
-                recent[perkType] = nowHours
+                local samples = recent[perkType]
+                if type(samples) ~= "table" then
+                    samples = {}
+                    recent[perkType] = samples
+                end
+                samples[#samples + 1] = {
+                    amount = currentXp - previousXp,
+                    gainedAtHours = nowHours,
+                    gainedAtTimestamp = nowTimestamp,
+                }
+                while #samples > MAX_RECENT_XP_SAMPLES_PER_PERK do
+                    table.remove(samples, 1)
+                end
             end
             baselines[perkType] = currentXp
         end
@@ -455,6 +641,7 @@ function SkillFilter.init(settings, logger)
     originalLoadPerk = ISCharacterInfo.loadPerk
     originalCreateChildren = ISCharacterInfo.createChildren
     originalRender = ISCharacterInfo.render
+    originalSetVisible = ISCharacterInfo.setVisible
 
     ISCharacterInfo.loadPerk = function(self)
         local allPerks = originalLoadPerk(self)
@@ -506,12 +693,22 @@ function SkillFilter.init(settings, logger)
             end
         elseif self.qolSkillFilterModeDropdown and self.qolSkillFilterModeDropdown.setVisible then
             self.qolSkillFilterModeDropdown:setVisible(false)
+            clearRecentXpLabelHovers(self)
         end
 
         if isSkillFilterEnabled(settings) then
             renderWithRecentXpHighlights(self, settings)
         else
             originalRender(self)
+        end
+    end
+
+    if originalSetVisible then
+        ISCharacterInfo.setVisible = function(self, visible)
+            if visible ~= true then
+                clearRecentXpLabelHovers(self)
+            end
+            return originalSetVisible(self, visible)
         end
     end
 

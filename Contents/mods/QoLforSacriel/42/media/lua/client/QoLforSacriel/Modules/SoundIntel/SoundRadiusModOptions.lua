@@ -35,6 +35,10 @@ function SoundRadiusModOptions.register(logger, onApplyRefresh)
     options:addSlider("ringOpacityPercent", "UI_QoLforSacriel_SoundRadius_Opacity", 5, 80, 5, 25, "UI_QoLforSacriel_SoundRadius_Opacity_Tooltip")
     options:addSlider("ringCullingMarginPx", "UI_QoLforSacriel_SoundRadius_CullingMargin", 0, 1024, 32, 128, "UI_QoLforSacriel_SoundRadius_CullingMargin_Tooltip")
     options:addTickBox("showRadiusLabel", "UI_QoLforSacriel_SoundRadius_ShowRadiusLabel", true, "UI_QoLforSacriel_SoundRadius_ShowRadiusLabel_Tooltip")
+    local radiusLabelFontOption = options:addComboBox("radiusLabelFont", "UI_QoLforSacriel_SoundRadius_LabelFont", "UI_QoLforSacriel_SoundRadius_LabelFont_Tooltip")
+    radiusLabelFontOption:addItem("UI_QoLforSacriel_SoundRadius_LabelFont_Small", true)
+    radiusLabelFontOption:addItem("UI_QoLforSacriel_SoundRadius_LabelFont_Medium", false)
+    radiusLabelFontOption:addItem("UI_QoLforSacriel_SoundRadius_LabelFont_Large", false)
     attachApplyRefresh(options, onApplyRefresh)
     return options
 end
