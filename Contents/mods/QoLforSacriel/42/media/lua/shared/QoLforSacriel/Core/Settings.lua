@@ -1,3 +1,4 @@
+-- ff-assisted
 local Settings = {}
 local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
 
@@ -37,6 +38,9 @@ local defaults = {
     QoLforSacriel_UIFixes_EnableEatChainAll = true,
     QoLforSacriel_UIFixes_EnableEatUntilNotHungry = true,
     QoLforSacriel_UIFixes_EnableHeavyCraftDrop = false,
+    QoLforSacriel_UIFixes_EnableWashAllBloodiestFirst = true,
+    QoLforSacriel_UIFixes_EnableFishingNearbyLures = true,
+    QoLforSacriel_UIFixes_EnableHeldItemPutInContainer = true,
     QoLforSacriel_UIFixes_EnableSoundDirection = true,
     QoLforSacriel_UIFixes_EnableNoiseRadius = true,
     QoLforSacriel_UIFixes_WaterDepthHints_OverlayRadius = 3,
@@ -128,6 +132,9 @@ local MOD_OPTION_KEY_BY_SETTING = {
     QoLforSacriel_UIFixes_EnableEatChainAll = "enableEatChainAll",
     QoLforSacriel_UIFixes_EnableEatUntilNotHungry = "enableEatUntilNotHungry",
     QoLforSacriel_UIFixes_EnableHeavyCraftDrop = "enableHeavyCraftDrop",
+    QoLforSacriel_UIFixes_EnableWashAllBloodiestFirst = "enableWashAllBloodiestFirst",
+    QoLforSacriel_UIFixes_EnableFishingNearbyLures = "enableFishingNearbyLures",
+    QoLforSacriel_UIFixes_EnableHeldItemPutInContainer = "enableHeldItemPutInContainer",
     QoLforSacriel_UIFixes_WaterDepthHints_OverlayRadius = "waterDepthOverlayRadius",
     QoLforSacriel_UIFixes_WaterDepthHints_ShowLitersAboveForaging3 = "waterDepthShowLitersAboveForaging3",
     QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount = "waterDepthShallowMinWaterCount",

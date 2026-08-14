@@ -1,3 +1,4 @@
+-- ff-assisted
 local CoreModOptions = {}
 local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
 local HOTKEY_NONE_TOKEN = "NONE"
@@ -368,6 +369,9 @@ function CoreModOptions.register(logger)
     options:addTickBox("enableEatChainAll", "UI_QoLforSacriel_Modules_EnableEatChainAll", true, "UI_QoLforSacriel_Modules_EnableEatChainAll_Tooltip")
     options:addTickBox("enableEatUntilNotHungry", "UI_QoLforSacriel_Modules_EnableEatUntilNotHungry", true, "UI_QoLforSacriel_Modules_EnableEatUntilNotHungry_Tooltip")
     options:addTickBox("enableHeavyCraftDrop", "UI_QoLforSacriel_Modules_EnableHeavyCraftDrop", false, "UI_QoLforSacriel_Modules_EnableHeavyCraftDrop_Tooltip")
+    options:addTickBox("enableWashAllBloodiestFirst", "UI_QoLforSacriel_Modules_EnableWashAllBloodiestFirst", true, "UI_QoLforSacriel_Modules_EnableWashAllBloodiestFirst_Tooltip")
+    options:addTickBox("enableFishingNearbyLures", "UI_QoLforSacriel_Modules_EnableFishingNearbyLures", true, "UI_QoLforSacriel_Modules_EnableFishingNearbyLures_Tooltip")
+    options:addTickBox("enableHeldItemPutInContainer", "UI_QoLforSacriel_Modules_EnableHeldItemPutInContainer", true, "UI_QoLforSacriel_Modules_EnableHeldItemPutInContainer_Tooltip")
     options:addTickBox("enableWaterDepthHints", "UI_QoLforSacriel_Modules_EnableWaterDepthHints", true, "UI_QoLforSacriel_Modules_EnableWaterDepthHints_Tooltip")
     options:addTickBox("waterDepthShowLitersAboveForaging3", "UI_QoLforSacriel_Modules_WaterDepthShowLitersAboveForaging3", true, "UI_QoLforSacriel_Modules_WaterDepthShowLitersAboveForaging3_Tooltip")
     
