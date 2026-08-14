@@ -1,3 +1,4 @@
+-- ff-assisted
 local Bootstrap = {}
 
 local logger = require "QoLforSacriel/Core/Logger"
@@ -30,6 +31,9 @@ local function registerModules()
     local craftToolSubmenu = safeRequire("QoLforSacriel/Modules/UIFixes/CraftToolSubmenu")
     local inventoryUpdate = safeRequire("QoLforSacriel/Modules/UIFixes/InventoryUpdate")
     local heavyCraftDrop = safeRequire("QoLforSacriel/Modules/UIFixes/HeavyCraftDrop")
+    local washAllOrder = safeRequire("QoLforSacriel/Modules/UIFixes/WashAllOrder")
+    local fishingNearbyLures = safeRequire("QoLforSacriel/Modules/UIFixes/FishingNearbyLures")
+    local heldItemContainerMenu = safeRequire("QoLforSacriel/Modules/UIFixes/HeldItemContainerMenu")
     local soundDirection = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundDirection")
     local soundRadius = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundRadius")
     local furnitureNudge = safeRequire("QoLforSacriel/Modules/FurnitureNudge/FurnitureNudge")
@@ -67,6 +71,15 @@ local function registerModules()
     end
     if heavyCraftDrop and heavyCraftDrop.init then
         registry.register("UIFixes.HeavyCraftDrop", "QoLforSacriel_EnableUIFixes", heavyCraftDrop.init)
+    end
+    if washAllOrder and washAllOrder.init then
+        registry.register("UIFixes.WashAllOrder", "QoLforSacriel_EnableUIFixes", washAllOrder.init)
+    end
+    if fishingNearbyLures and fishingNearbyLures.init then
+        registry.register("UIFixes.FishingNearbyLures", "QoLforSacriel_EnableUIFixes", fishingNearbyLures.init)
+    end
+    if heldItemContainerMenu and heldItemContainerMenu.init then
+        registry.register("UIFixes.HeldItemContainerMenu", "QoLforSacriel_EnableUIFixes", heldItemContainerMenu.init)
     end
     if soundDirection and soundDirection.init then
         registry.register("SoundDirection.Base", "QoLforSacriel_EnableMod", soundDirection.init)
