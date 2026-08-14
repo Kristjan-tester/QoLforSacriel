@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.14
+Current version: v0.15
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -14,17 +14,20 @@ Current version: v0.14
 	- Made for single-player. Not tested in multiplayer.
  
 Features:
-- (NEW) - Towels take linear amount of water - 1 towel is enough now to dry yourself.
-- (NEW) - Improve entering car, character will reorient themselves when close to door
-- (NEW) - Fitness tab in Info panel - indicate weight gain in detail, strength training xp, etc.
-- (UPDATED) Switch off nearby device with keybind (CTRL+G) or context menu option - alarms, TV/Radio:
+- (NEW) - 'Add bait' now extends to nearby containers
+- (NEW) - 'Wash all' sorts by bloodiest
+- (NEW) - 'Put in container' extended for handheld items for all nearby containers 
+- Towels take linear amount of water - 1 towel is enough now to dry yourself.
+- Improve entering car, character will reorient themselves when close to door
+- Fitness tab in Info panel - indicate weight gain in detail, strength training xp, etc.
+- Switch off nearby device with keybind (CTRL+G) or context menu option - alarms, TV/Radio:
 	- searches nearby 3 radius cells for active items to turn off, walks to them and turns off
  	- priority highest to lowest:
   		- Inventory item alarms
     	- Inventory devices
      	- World alarms
       	- World devices
-	- Known limitation : doesn't work for parcels (other containers are fine)      	  
+	- Known limitation : doesn't work for parcels or garbage bags (any container-in-container basically)      	  
 - Character Audio Rings - shows radius where the sounds travels when made. Important:
     - Zombies can hear sounds outside of that range (depending on their hearing: 0.45x ; 1x; 3x range)
     - Game does not generate sounds that one would expect - opening doors, using microwave, for example - testing all of them is tricky, let me know when you see inconsistencies. 
