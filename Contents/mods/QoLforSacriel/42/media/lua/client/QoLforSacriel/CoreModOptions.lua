@@ -398,6 +398,10 @@ function CoreModOptions.register(logger)
     options:addTextEntry("waterDepthDeepMinWaterCount", "UI_QoLforSacriel_Modules_WaterDepthDeepMinWaterCount", "7", "UI_QoLforSacriel_Modules_WaterDepthDeepMinWaterCount_Tooltip")
 
     options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_ForagingRefinementTitle")
+    options:addTickBox("enableForagingRefinement", "UI_QoLforSacriel_Modules_EnableForagingRefinement", true, "UI_QoLforSacriel_Modules_EnableForagingRefinement_Tooltip")
+
+    options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_InteractionTitle")
 
     options:addSeparator()
