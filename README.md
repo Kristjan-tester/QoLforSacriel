@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.15
+Current version: v0.16
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -14,6 +14,7 @@ Current version: v0.15
 	- Made for single-player. Not tested in multiplayer.
  
 Features:
+- (NEW) - Foraging panel now has option to "focus on foraging items" (ignoring all dropped or other world items (car keys, etc.))
 - (NEW) - 'Add bait' now extends to nearby containers
 - (NEW) - 'Wash all' sorts by bloodiest
 - (NEW) - 'Put in container' extended for handheld items for all nearby containers 
