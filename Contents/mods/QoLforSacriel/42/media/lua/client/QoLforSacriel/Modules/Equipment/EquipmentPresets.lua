@@ -734,15 +734,64 @@ local function detectCurrentBodyLocation(playerObj, item)
     return nil
 end
 
+local isWeaponCategoryItem
+
+local function isWearableItem(item)
+    if not item then
+        return false
+    end
+
+    if item.getBodyLocation then
+        local okBody, bodyLocation = pcall(item.getBodyLocation, item)
+        if okBody and bodyLocation and tostring(bodyLocation) ~= "" then
+            return true
+        end
+    end
+
+    if item.canBeEquipped then
+        local okEquippable, bodyLocation = pcall(item.canBeEquipped, item)
+        if okEquippable and bodyLocation and tostring(bodyLocation) ~= "" then
+            return true
+        end
+    end
+
+    if item.isClothing then
+        local okClothing, clothing = pcall(item.isClothing, item)
+        if okClothing and clothing == true then
+            return true
+        end
+    end
+
+    if item.getCategory then
+        local okCategory, category = pcall(item.getCategory, item)
+        if okCategory and category == "Clothing" then
+            return true
+        end
+    end
+
+    if item.hasTag then
+        local okTag, hasWearableTag = pcall(item.hasTag, item, "Wearable")
+        if okTag and hasWearableTag == true then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function isPresetContextItem(item)
+    return item and item.getFullType and (isWeaponCategoryItem(item) or isWearableItem(item))
+end
+
 local function collectSelectedEntries(items, playerObj)
     local selectedEntries = {}
     local seen = {}
 
     for i = 1, #items do
         local item = items[i]
-        if item and item.getFullType then
+        if isPresetContextItem(item) then
             local fullType = item:getFullType()
-            if fullType then
+            if fullType and fullType ~= "" then
                 local handMode = detectCurrentHandMode(playerObj, item)
                 local bodyLocation = detectCurrentBodyLocation(playerObj, item)
                 if not seen[fullType] then
@@ -833,7 +882,7 @@ local function isProtectiveGearItem(item)
     return normalized == "protectivegear"
 end
 
-local function isWeaponCategoryItem(item)
+isWeaponCategoryItem = function(item)
     local category = getItemDisplayCategory(item)
     if not category then
         return false
@@ -1262,49 +1311,6 @@ local function findInventoryItemByType(playerObj, fullType)
     return nil
 end
 
-local function isWearableItem(item)
-    if not item then
-        return false
-    end
-
-    if item.getBodyLocation then
-        local okBody, bodyLocation = pcall(item.getBodyLocation, item)
-        if okBody and bodyLocation and tostring(bodyLocation) ~= "" then
-            return true
-        end
-    end
-
-    if item.canBeEquipped then
-        local okEquippable, bodyLocation = pcall(item.canBeEquipped, item)
-        if okEquippable and bodyLocation and tostring(bodyLocation) ~= "" then
-            return true
-        end
-    end
-
-    if item.isClothing then
-        local okClothing, clothing = pcall(item.isClothing, item)
-        if okClothing and clothing == true then
-            return true
-        end
-    end
-
-    if item.getCategory then
-        local okCategory, category = pcall(item.getCategory, item)
-        if okCategory and category == "Clothing" then
-            return true
-        end
-    end
-
-    if item.hasTag then
-        local okTag, hasWearableTag = pcall(item.hasTag, item, "Wearable")
-        if okTag and hasWearableTag == true then
-            return true
-        end
-    end
-
-    return false
-end
-
 local function isMannequinCompatibleItem(item, bodyLocation)
     local normalizedBodyLocation = normalizeBodyLocation(bodyLocation)
     if not item or not normalizedBodyLocation or getItemBodyLocation(item) ~= normalizedBodyLocation then
@@ -1413,6 +1419,22 @@ local function isUsableMannequin(object)
         and object.getSquare and object:getSquare()
 end
 
+local function resolveMannequinOnSquare(square)
+    local objects = square and square.getObjects and square:getObjects() or nil
+    if not objects then
+        return nil
+    end
+
+    for index = 0, objects:size() - 1 do
+        local object = objects:get(index)
+        if isUsableMannequin(object) then
+            return object
+        end
+    end
+
+    return nil
+end
+
 local function resolveMannequin(worldobjects)
     if not worldobjects then
         return nil
@@ -1424,14 +1446,20 @@ local function resolveMannequin(worldobjects)
         end
 
         local square = worldObject and worldObject.getSquare and worldObject:getSquare() or nil
-        local objects = square and square.getObjects and square:getObjects() or nil
-        if objects then
-            for index = 0, objects:size() - 1 do
-                local object = objects:get(index)
-                if isUsableMannequin(object) then
-                    return object
-                end
-            end
+        local mannequin = resolveMannequinOnSquare(square)
+        if mannequin then
+            return mannequin
+        end
+    end
+
+    local clickedObject = worldobjects[1]
+    local clickedSquare = clickedObject and clickedObject.getSquare and clickedObject:getSquare() or nil
+    local cell = getCell and getCell() or nil
+    if clickedSquare and cell and cell.getGridSquare then
+        local diagonalSquare = cell:getGridSquare(clickedSquare:getX() + 1, clickedSquare:getY() - 1, clickedSquare:getZ())
+        local mannequin = resolveMannequinOnSquare(diagonalSquare)
+        if mannequin then
+            return mannequin
         end
     end
 
@@ -1554,8 +1582,10 @@ local function queueProtectiveArmorFromMannequin(playerObj, mannequin, logger)
 end
 
 local function queuePresetToMannequin(playerObj, mannequin, presetIndex, logger)
-    if not canUseMannequinTransfers(playerObj, mannequin) or not walkToMannequin(playerObj, mannequin) then
-        logMannequinDebug(logger, "put rejected: canTransfer=" .. tostring(canUseMannequinTransfers(playerObj, mannequin)) .. ", adjacent=" .. tostring(walkToMannequin(playerObj, mannequin)))
+    local canTransfer = canUseMannequinTransfers(playerObj, mannequin)
+    local walkedToMannequin = canTransfer and walkToMannequin(playerObj, mannequin)
+    if not canTransfer or not walkedToMannequin then
+        logMannequinDebug(logger, "put rejected: canTransfer=" .. tostring(canTransfer) .. ", adjacent=" .. tostring(walkedToMannequin))
         return
     end
 
@@ -1858,7 +1888,7 @@ onMannequinContext = function(playerObj, context, mannequin, settings, logger, s
     local canTransfer = canUseMannequinTransfers(playerObj, mannequin)
     local mannequinHasProtectiveArmor = #getMannequinWornItems(mannequin, isProtectiveClothingItem) > 0
     if settings.get("QoLforSacriel_DebugLogs") == true then
-        logMannequinDebug(logger, "menu opened: source=" .. tostring(source) .. ", canTransfer=" .. tostring(canTransfer) .. ", dead=" .. tostring(playerObj:isDead()) .. ", vehicle=" .. tostring(playerObj:getVehicle() ~= nil) .. ", adjacent=" .. tostring(walkToMannequin(playerObj, mannequin)) .. ", mannequinHasProtectiveArmor=" .. tostring(mannequinHasProtectiveArmor))
+        logMannequinDebug(logger, "menu opened: source=" .. tostring(source) .. ", canTransfer=" .. tostring(canTransfer) .. ", dead=" .. tostring(playerObj:isDead()) .. ", vehicle=" .. tostring(playerObj:getVehicle() ~= nil) .. ", mannequinHasProtectiveArmor=" .. tostring(mannequinHasProtectiveArmor))
     end
 
     local armorLabel = mannequinHasProtectiveArmor and getWearProtectiveArmorLabel() or getStoreProtectiveArmorLabel()

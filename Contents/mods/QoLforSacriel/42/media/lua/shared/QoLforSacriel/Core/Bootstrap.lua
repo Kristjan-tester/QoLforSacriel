@@ -34,6 +34,7 @@ local function registerModules()
     local washAllOrder = safeRequire("QoLforSacriel/Modules/UIFixes/WashAllOrder")
     local fishingNearbyLures = safeRequire("QoLforSacriel/Modules/UIFixes/FishingNearbyLures")
     local heldItemContainerMenu = safeRequire("QoLforSacriel/Modules/UIFixes/HeldItemContainerMenu")
+    local foragingRefinement = safeRequire("QoLforSacriel/Modules/ForagingRefinement/ForagingRefinement")
     local soundDirection = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundDirection")
     local soundRadius = safeRequire("QoLforSacriel/Modules/SoundIntel/SoundRadius")
     local furnitureNudge = safeRequire("QoLforSacriel/Modules/FurnitureNudge/FurnitureNudge")
@@ -80,6 +81,9 @@ local function registerModules()
     end
     if heldItemContainerMenu and heldItemContainerMenu.init then
         registry.register("UIFixes.HeldItemContainerMenu", "QoLforSacriel_EnableUIFixes", heldItemContainerMenu.init)
+    end
+    if foragingRefinement and foragingRefinement.init then
+        registry.register("ForagingRefinement.Base", "QoLforSacriel_EnableForagingRefinement", foragingRefinement.init)
     end
     if soundDirection and soundDirection.init then
         registry.register("SoundDirection.Base", "QoLforSacriel_EnableMod", soundDirection.init)
