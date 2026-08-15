@@ -400,6 +400,14 @@ function CoreModOptions.register(logger)
     options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_ForagingRefinementTitle")
     options:addTickBox("enableForagingRefinement", "UI_QoLforSacriel_Modules_EnableForagingRefinement", true, "UI_QoLforSacriel_Modules_EnableForagingRefinement_Tooltip")
+    local foragingPinColorPresetOption = options:addComboBox("foragingRefinementPinColorPreset", "UI_QoLforSacriel_Modules_ForagingRefinementPinColor", "UI_QoLforSacriel_Modules_ForagingRefinementPinColor_Tooltip")
+    for i = 1, 5 do
+        foragingPinColorPresetOption:addItem("UI_QoLforSacriel_Modules_ForagingRefinementPinColor_" .. tostring(i), i == 1)
+    end
+
+    options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_OrganizedInventoryTitle")
+    options:addTickBox("enableOrganizedInventory", "UI_QoLforSacriel_Modules_EnableOrganizedInventory", true, "UI_QoLforSacriel_Modules_EnableOrganizedInventory_Tooltip")
 
     options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_InteractionTitle")
