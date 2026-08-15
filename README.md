@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.16
+Current version: v0.17
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -14,10 +14,16 @@ Current version: v0.16
 	- Made for single-player. Not tested in multiplayer.
  
 Features:
-- (NEW) - Foraging panel now has option to "focus on foraging items" (ignoring all dropped or other world items (car keys, etc.))
-- (NEW) - 'Add bait' now extends to nearby containers
-- (NEW) - 'Wash all' sorts by bloodiest
-- (NEW) - 'Put in container' extended for handheld items for all nearby containers 
+- (NEW) - "Unload all" to nearby containers (tag them to hold specific category of items):
+	- Click "unload all" in footer of main inventory or bags to start it
+  	- there is 'everything else' category for 'catch all' option if containers with right tags
+ 	- If no room anywhere, items will stay in container
+- (UPDATED) - Foraging panel now has filtering option for Pins: 
+    - Show only foraging items (ignoring all dropped or other world items (car keys, etc.))
+    - Colour pins for world items, so you can easily detect. (Colour can be changed in modoptions)
+- 'Add bait' now extends to nearby containers
+- 'Wash all' sorts by bloodiest
+- 'Put in container' extended for handheld items for all nearby containers 
 - Towels take linear amount of water - 1 towel is enough now to dry yourself.
 - Improve entering car, character will reorient themselves when close to door
 - Fitness tab in Info panel - indicate weight gain in detail, strength training xp, etc.
