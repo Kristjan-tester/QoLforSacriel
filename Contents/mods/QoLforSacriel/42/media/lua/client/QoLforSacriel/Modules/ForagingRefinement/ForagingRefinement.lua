@@ -1,21 +1,35 @@
+-- ff-assisted
 local ForagingRefinement = {}
 
 require "Foraging/ISSearchManager"
 require "Foraging/ISSearchWindow"
-require "ISUI/ISTickBox"
+require "Foraging/ISBaseIcon"
+require "ISUI/ISComboBox"
 
 local coreModOptions = require "QoLforSacriel/CoreModOptions"
 
 local MODULE_SETTING = "QoLforSacriel_EnableForagingRefinement"
-local CHECKBOX_LABEL = "Only on foraging items"
+local PIN_COLOR_SETTING = "QoLforSacriel_ForagingRefinement_PinColorPreset"
+local MODE_NO = 1
+local MODE_HIDE = 2
+local MODE_YELLOW = 3
 local UI_BORDER_SPACING = 10
+
+local PIN_COLOR_PRESETS = {
+    { r = 1.00, g = 0.90, b = 0.10 },
+    { r = 1.00, g = 0.50, b = 0.05 },
+    { r = 0.10, g = 0.90, b = 1.00 },
+    { r = 0.20, g = 1.00, b = 0.30 },
+    { r = 1.00, g = 0.20, b = 0.85 },
+}
 
 local installed = false
 local settingsRef = nil
 local loggerRef = nil
 local originalSearchWindowInitialise = nil
 local originalWorldItemTest = nil
-local onlyForagingByPlayer = {}
+local originalRenderPinIcon = nil
+local modeByPlayer = {}
 
 local function isModuleEnabled()
     return settingsRef
@@ -42,27 +56,33 @@ local function clearWorldItemIcons(manager)
     end
 end
 
-local function getOnlyForaging(window)
-    return onlyForagingByPlayer[window.player] == true
+local function getPlayerMode(playerNum)
+    local mode = tonumber(modeByPlayer[playerNum]) or MODE_NO
+    if mode < MODE_NO or mode > MODE_YELLOW then
+        return MODE_NO
+    end
+    return mode
 end
 
-local function getCheckboxLabel()
-    return getTextOrNull("UI_QoLforSacriel_ForagingRefinement_OnlyForagingItems") or CHECKBOX_LABEL
+local function getPinColorPreset()
+    local preset = settingsRef and settingsRef.get and tonumber(settingsRef.get(PIN_COLOR_SETTING)) or MODE_NO
+    preset = math.floor(preset or MODE_NO)
+    return PIN_COLOR_PRESETS[preset] or PIN_COLOR_PRESETS[MODE_NO]
 end
 
 local function updateWindowLayout(window)
-    local checkbox = window.qolForagingRefinementCheckbox
-    if not checkbox or not window.searchFocus or not window.toggleSearchMode then
+    local dropdown = window.qolForagingRefinementDropdown
+    if not dropdown or not window.searchFocus or not window.toggleSearchMode then
         return
     end
 
     local enabled = isModuleEnabled()
-    checkbox:setVisible(enabled)
-    checkbox.enable = enabled
+    dropdown:setVisible(enabled)
+    dropdown:setEnabled(enabled)
 
     if enabled then
-        checkbox:setY(window.searchFocus:getBottom() + UI_BORDER_SPACING)
-        window.toggleSearchMode:setY(checkbox:getBottom() + UI_BORDER_SPACING)
+        dropdown:setY(window.searchFocus:getBottom() + UI_BORDER_SPACING)
+        window.toggleSearchMode:setY(dropdown:getBottom() + UI_BORDER_SPACING)
     else
         window.toggleSearchMode:setY(window.searchFocus:getBottom() + UI_BORDER_SPACING)
     end
@@ -70,36 +90,48 @@ local function updateWindowLayout(window)
     window:setHeight(window.toggleSearchMode:getBottom() + UI_BORDER_SPACING + 1)
 end
 
-local function onCheckboxChanged(window, _, selected)
-    onlyForagingByPlayer[window.player] = selected == true
-    if selected == true then
+local function onModeChanged(window, dropdown)
+    if not window or not dropdown then
+        return
+    end
+    local mode = tonumber(dropdown.selected) or MODE_NO
+    modeByPlayer[window.player] = mode
+    if mode == MODE_HIDE then
         clearWorldItemIcons(window.manager)
     end
 end
 
-local function ensureCheckbox(window)
+local function ensureDropdown(window)
     if not window or not window.searchFocus or not window.toggleSearchMode then
         return
     end
 
-    local checkbox = window.qolForagingRefinementCheckbox
-    if not checkbox then
-        checkbox = ISTickBox:new(
+    local legacyCheckbox = window.qolForagingRefinementCheckbox
+    if legacyCheckbox then
+        window:removeChild(legacyCheckbox)
+        legacyCheckbox:setVisible(false)
+        window.qolForagingRefinementCheckbox = nil
+    end
+
+    local dropdown = window.qolForagingRefinementDropdown
+    if not dropdown then
+        dropdown = ISComboBox:new(
             UI_BORDER_SPACING + 1,
             window.searchFocus:getBottom() + UI_BORDER_SPACING,
             window.width - (UI_BORDER_SPACING + 1) * 2,
             window.toggleSearchMode:getHeight(),
-            "QoLforSacriel.ForagingRefinement",
             window,
-            onCheckboxChanged
+            onModeChanged
         )
-        checkbox:initialise()
-        checkbox:addOption(getCheckboxLabel())
-        checkbox:setSelected(1, getOnlyForaging(window))
-        window:addChild(checkbox)
-        window.qolForagingRefinementCheckbox = checkbox
+        dropdown:initialise()
+        dropdown:addOption(getTextOrNull("UI_QoLforSacriel_ForagingRefinement_ModeNo") or "No")
+        dropdown:addOption(getTextOrNull("UI_QoLforSacriel_ForagingRefinement_ModeHide") or "Hide")
+        dropdown:addOption(getTextOrNull("UI_QoLforSacriel_ForagingRefinement_ModeYellow") or "Yellow")
+        window:addChild(dropdown)
+        window.qolForagingRefinementDropdown = dropdown
     end
 
+    dropdown.selected = getPlayerMode(window.player)
     updateWindowLayout(window)
 end
 
@@ -109,7 +141,7 @@ local function refreshSearchWindows()
     end
 
     for _, window in pairs(ISSearchWindow.players) do
-        ensureCheckbox(window)
+        ensureDropdown(window)
     end
 end
 
@@ -121,7 +153,7 @@ local function patchSearchWindow()
     originalSearchWindowInitialise = ISSearchWindow.initialise
     ISSearchWindow.initialise = function(window)
         originalSearchWindowInitialise(window)
-        ensureCheckbox(window)
+        ensureDropdown(window)
     end
     return true
 end
@@ -133,10 +165,44 @@ local function patchWorldItemFilter()
 
     originalWorldItemTest = ISSearchManager.worldItemTest
     ISSearchManager.worldItemTest = function(manager, itemObj)
-        if isModuleEnabled() and onlyForagingByPlayer[manager.player] == true then
+        if isModuleEnabled() and getPlayerMode(manager.player) == MODE_HIDE then
             return false
         end
         return originalWorldItemTest(manager, itemObj)
+    end
+    return true
+end
+
+local function patchPhysicalPinRenderer()
+    if not ISBaseIcon or not ISBaseIcon.renderPinIcon then
+        return false
+    end
+
+    originalRenderPinIcon = ISBaseIcon.renderPinIcon
+    ISBaseIcon.renderPinIcon = function(icon)
+        local manager = icon and icon.manager
+        local shouldTint = isModuleEnabled()
+            and manager ~= nil
+            and getPlayerMode(manager.player) == MODE_YELLOW
+            and icon.iconClass == "worldObject"
+            and type(icon.textureColor) == "table"
+        if not shouldTint then
+            return originalRenderPinIcon(icon)
+        end
+
+        local color = icon.textureColor
+        local originalRed, originalGreen, originalBlue = color.r, color.g, color.b
+        local tint = getPinColorPreset()
+        color.r, color.g, color.b = tint.r, tint.g, tint.b
+        local ok, result = pcall(originalRenderPinIcon, icon)
+        color.r, color.g, color.b = originalRed, originalGreen, originalBlue
+        if not ok then
+            if loggerRef and loggerRef.error then
+                loggerRef.error("ForagingRefinement yellow-pin render failed: " .. tostring(result))
+            end
+            return nil
+        end
+        return result
     end
     return true
 end
@@ -149,7 +215,7 @@ function ForagingRefinement.init(settings, logger)
     settingsRef = settings
     loggerRef = logger
 
-    if not patchSearchWindow() or not patchWorldItemFilter() then
+    if not patchSearchWindow() or not patchWorldItemFilter() or not patchPhysicalPinRenderer() then
         if loggerRef and loggerRef.error then
             loggerRef.error("ForagingRefinement unavailable: expected vanilla Search Mode APIs are missing")
         end
