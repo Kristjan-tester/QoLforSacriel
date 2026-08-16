@@ -408,6 +408,7 @@ function CoreModOptions.register(logger)
     options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_OrganizedInventoryTitle")
     options:addTickBox("enableOrganizedInventory", "UI_QoLforSacriel_Modules_EnableOrganizedInventory", true, "UI_QoLforSacriel_Modules_EnableOrganizedInventory_Tooltip")
+    options:addTickBox("showOrganizedInventoryTooltipTags", "UI_QoLforSacriel_Modules_ShowOrganizedInventoryTooltipTags", true, "UI_QoLforSacriel_Modules_ShowOrganizedInventoryTooltipTags_Tooltip")
 
     options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_InteractionTitle")
