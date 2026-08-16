@@ -26,6 +26,20 @@ local originalWidgetTitleHeaderRender = nil
 local originalWidgetTitleHeaderCalculateLayout = nil
 local originalWidgetCraftLogicTitleCreateChildren = nil
 local originalCharacterProtectionRender = nil
+local inventoryTooltipProviders = {}
+
+function EquipmentStatsDisplay.registerInventoryTooltipProvider(provider)
+    if type(provider) ~= "function" then
+        return false
+    end
+    for _, existingProvider in ipairs(inventoryTooltipProviders) do
+        if existingProvider == provider then
+            return true
+        end
+    end
+    table.insert(inventoryTooltipProviders, provider)
+    return true
+end
 
 local function logDebug(message)
     if not loggerRef or not loggerRef.debug then
@@ -1007,6 +1021,34 @@ local function collectNumericTooltipAppendLines(item, character)
     end
 
     return lines
+end
+
+local function collectInventoryTooltipAppendRows(item, character)
+    local rows = {}
+    if isShowStatsEnabled() then
+        local statsLines = collectNumericTooltipAppendLines(item, character)
+        if #statsLines > 0 then
+            local sectionTitle = getLocalizedText("UI_QoLforSacriel_Modules_NumericTooltipAppendHeader", "ShowStats")
+            if sectionTitle and sectionTitle ~= "" then
+                table.insert(rows, { header = sectionTitle })
+            end
+            for _, line in ipairs(statsLines) do
+                table.insert(rows, line)
+            end
+        end
+    end
+
+    for _, provider in ipairs(inventoryTooltipProviders) do
+        local ok, providerRows = pcall(provider, item, character)
+        if ok and type(providerRows) == "table" then
+            for _, line in ipairs(providerRows) do
+                if type(line) == "table" and line.label and line.value then
+                    table.insert(rows, line)
+                end
+            end
+        end
+    end
+    return rows
 end
 
 local function createInventoryItemByFullName(fullName)
@@ -2070,35 +2112,33 @@ local function patchInventoryTooltipRenderFallback()
             return originalToolTipInvRender(self)
         end
 
-        if not isShowStatsEnabled() then
-            return originalToolTipInvRender(self)
-        end
-
         if not self or not self.item or not self.tooltip then
             return originalToolTipInvRender(self)
         end
 
         local characterOk, character = safeCallMethod(self.tooltip, "getCharacter")
-        local lines = collectNumericTooltipAppendLines(self.item, characterOk and character or nil)
-        if #lines == 0 then
+        local rows = collectInventoryTooltipAppendRows(self.item, characterOk and character or nil)
+        if #rows == 0 then
             return originalToolTipInvRender(self)
         end
 
         local font = UIFont[getCore():getOptionTooltipFont()]
         local lineSpacing = self.tooltip:getLineSpacing()
-        local sectionTitle = getLocalizedText("UI_QoLforSacriel_Modules_NumericTooltipAppendHeader", "ShowStats")
-        local extraLineCount = #lines + (sectionTitle and 1 or 0)
-        local extraHeight = extraLineCount * lineSpacing
+        local extraHeight = #rows * lineSpacing
         local padLeft = 5
         local padRight = 5
         local columnGap = 16
         local requiredWidth = 0
         local textManager = getTextManager and getTextManager() or nil
         if textManager and type(textManager.MeasureStringX) == "function" then
-            for _, line in ipairs(lines) do
-                local labelWidth = textManager:MeasureStringX(font, line.label)
-                local valueWidth = textManager:MeasureStringX(font, line.value)
-                requiredWidth = math.max(requiredWidth, padLeft + labelWidth + columnGap + valueWidth + padRight)
+            for _, row in ipairs(rows) do
+                if row.header then
+                    requiredWidth = math.max(requiredWidth, padLeft + textManager:MeasureStringX(font, row.header) + padRight)
+                else
+                    local labelWidth = textManager:MeasureStringX(font, row.label)
+                    local valueWidth = textManager:MeasureStringX(font, row.value)
+                    requiredWidth = math.max(requiredWidth, padLeft + labelWidth + columnGap + valueWidth + padRight)
+                end
             end
         end
 
@@ -2128,13 +2168,13 @@ local function patchInventoryTooltipRenderFallback()
             end
 
             local y = instance.tooltip:getHeight()
-            if sectionTitle then
-                instance.tooltip:DrawText(font, sectionTitle, padLeft, y, 0.75, 0.95, 0.75, 1.0)
-                y = y + lineSpacing
-            end
-            for _, line in ipairs(lines) do
-                instance.tooltip:DrawText(font, line.label, padLeft, y, 0.75, 0.95, 0.75, 1.0)
-                instance.tooltip:DrawTextRight(font, line.value, instance.tooltip:getWidth() - padRight, y, 1.0, 1.0, 1.0, 1.0)
+            for _, row in ipairs(rows) do
+                if row.header then
+                    instance.tooltip:DrawText(font, row.header, padLeft, y, 0.75, 0.95, 0.75, 1.0)
+                else
+                    instance.tooltip:DrawText(font, row.label, padLeft, y, 0.75, 0.95, 0.75, 1.0)
+                    instance.tooltip:DrawTextRight(font, row.value, instance.tooltip:getWidth() - padRight, y, 1.0, 1.0, 1.0, 1.0)
+                end
                 y = y + lineSpacing
             end
             return originalDrawRectBorder(instance, ...)
