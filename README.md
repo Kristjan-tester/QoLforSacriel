@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.17
+Current version: v0.18 (not yet published in workshop)
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -17,7 +17,12 @@ Features:
 - (NEW) - "Unload all" to nearby containers (tag them to hold specific category of items):
 	- Click "unload all" in footer of main inventory or bags to start it
   	- there is 'everything else' category for 'catch all' option if containers with right tags
+  	- (UPDATED) - Food and Material have extra filtering tags, to make management easier and more specific
+  		- these tags categories align pz-wiki 
+  	 	- each item tooltip shows with category it belongs to
+  	  	- extra "frozen" tag to have enable moving all frozen items to container that has 'frozen' tag before their normal food tags apply.
  	- If no room anywhere, items will stay in container
+    - If no room info will be visible which container for what tag is full
 - (UPDATED) - Foraging panel now has filtering option for Pins: 
     - Show only foraging items (ignoring all dropped or other world items (car keys, etc.))
     - Colour pins for world items, so you can easily detect. (Colour can be changed in modoptions)
