@@ -812,11 +812,7 @@ local function isPresetContextItem(item)
     if GENERIC_PRESET_CONTEXT_CATEGORIES[category] then
         return false
     end
-    if category == "Weapon" then
-        return true
-    end
-
-    return isWeaponCategoryItem(item) or isWearableItem(item)
+    return category == "Weapon" or category == "Clothing"
 end
 
 local function collectSelectedEntries(items, playerObj)

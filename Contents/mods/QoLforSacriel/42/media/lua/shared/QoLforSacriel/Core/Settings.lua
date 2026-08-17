@@ -25,7 +25,7 @@ local defaults = {
     QoLforSacriel_EnableDrySelfDivisor = true,
     QoLforSacriel_DrySelf_WetnessPerUse = 12.5,
 
-    QoLforSacriel_Equipment_EnablePresets = false,
+    QoLforSacriel_Equipment_EnablePresets = true,
     QoLforSacriel_Equipment_EnableMannequinMenu = true,
 
     QoLforSacriel_UIFixes_SkillFilterRecentMinutes = 60,
@@ -59,7 +59,7 @@ local defaults = {
     QoLforSacriel_SoundIntel_EnableInferredZombie = true,
     QoLforSacriel_SoundIntel_EnableInferredAnimal = true,
     QoLforSacriel_SoundIntel_ShowSourceLabel = true,
-    QoLforSacriel_SoundIntel_ShowOutsideHearing = false,
+    QoLforSacriel_SoundIntel_ShowOutsideHearing = true,
     QoLforSacriel_SoundIntel_ArrowScalePercent = 100,
     QoLforSacriel_SoundIntel_ArrowScalePreset = 2,
     QoLforSacriel_SoundIntel_MaxTrackedCues = 32,
