@@ -230,6 +230,8 @@
   "UI_QoLforSacriel_Modules_EnableEquipment_Tooltip": "Turns the equipment preset system on or off.",
   "UI_QoLforSacriel_Modules_EquipmentEnablePresets": "Enable Equipment Presets",
   "UI_QoLforSacriel_Modules_EquipmentEnablePresets_Tooltip": "Enables preset save, toggle, and clear actions in inventory context menu and hotkeys. All items can be added manually, but only armor/weapons are added 'on add all",
+  "UI_QoLforSacriel_Modules_EquipmentEnableMannequinMenu": "Enable Mannequin Preset Menu",
+  "UI_QoLforSacriel_Modules_EquipmentEnableMannequinMenu_Tooltip": "Shows Equipment Presets actions when right-clicking mannequins.",
   "UI_QoLforSacriel_Modules_EquipmentPresetCount": "Equipment Preset Count",
   "UI_QoLforSacriel_Modules_EquipmentPresetCount_Tooltip": "How many equipment preset slots are exposed to the player.",
   "UI_QoLforSacriel_Modules_EquipmentPresetCount_1": "1",
