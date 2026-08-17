@@ -14,6 +14,14 @@ local MAX_BODY_LOCATION_LENGTH = 64
 local MAX_PRESET_NAME_LENGTH = 24
 local HOTKEY_NONE_TOKEN = "NONE"
 local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
+local GENERIC_PRESET_CONTEXT_CATEGORIES = {
+    Food = true,
+    Literature = true,
+    Drainable = true,
+    Key = true,
+    Map = true,
+    WeaponPart = true,
+}
 
 local HOTKEY_SETTING_PREFIX = "QoLforSacriel_Equipment_PresetHotkey"
 
@@ -779,8 +787,36 @@ local function isWearableItem(item)
     return false
 end
 
+local function getItemCategory(item)
+    if not item or not item.getCategory then
+        return nil
+    end
+
+    local ok, category = pcall(item.getCategory, item)
+    if ok then
+        return category
+    end
+
+    return nil
+end
+
 local function isPresetContextItem(item)
-    return item and item.getFullType and (isWeaponCategoryItem(item) or isWearableItem(item))
+    if not item or not item.getFullType then
+        return false
+    end
+
+    local category = getItemCategory(item)
+    if category == nil then
+        return false
+    end
+    if GENERIC_PRESET_CONTEXT_CATEGORIES[category] then
+        return false
+    end
+    if category == "Weapon" then
+        return true
+    end
+
+    return isWeaponCategoryItem(item) or isWearableItem(item)
 end
 
 local function collectSelectedEntries(items, playerObj)
@@ -1466,49 +1502,6 @@ local function resolveMannequin(worldobjects)
     return nil
 end
 
-local function resolveMannequinFromInventoryContext(items)
-    if not items then
-        return nil
-    end
-
-    local function resolveFromContainer(container)
-        local parent = container and container.getParent and container:getParent() or nil
-        if isUsableMannequin(parent) then
-            return parent
-        end
-        return nil
-    end
-
-    for _, selected in ipairs(items) do
-        local mannequin = resolveFromContainer(selected)
-        if mannequin then
-            return mannequin
-        end
-
-        local container = selected and selected.getContainer and selected:getContainer() or nil
-        mannequin = resolveFromContainer(container)
-        if mannequin then
-            return mannequin
-        end
-
-        container = selected and selected.getItemContainer and selected:getItemContainer() or nil
-        mannequin = resolveFromContainer(container)
-        if mannequin then
-            return mannequin
-        end
-
-        local wrappedItems = selected and selected.items or nil
-        if type(wrappedItems) == "table" then
-            mannequin = resolveMannequinFromInventoryContext(wrappedItems)
-            if mannequin then
-                return mannequin
-            end
-        end
-    end
-
-    return nil
-end
-
 local function canUseMannequinTransfers(playerObj, mannequin)
     if not playerObj or playerObj:isDead() or playerObj:getVehicle() then
         return false
@@ -1832,18 +1825,15 @@ local function onInventoryContext(playerIndex, context, items, settings, logger)
         return
     end
 
-    local mannequin = resolveMannequinFromInventoryContext(items)
-    if mannequin then
-        onMannequinContext(playerObj, context, mannequin, settings, logger, "container")
-        return
-    end
-
     local actualItems = resolveActualItems(items)
     if #actualItems == 0 then
         return
     end
 
     local selectedEntries = collectSelectedEntries(actualItems, playerObj)
+    if settings.get("QoLforSacriel_DebugLogs") == true and logger and logger.debug then
+        logger.debug("Equipment preset inventory classification: selected=" .. tostring(#actualItems) .. ", eligible=" .. tostring(#selectedEntries))
+    end
     if #selectedEntries == 0 then
         return
     end
@@ -1929,6 +1919,7 @@ end
 local function onWorldObjectContext(playerIndex, context, worldobjects, test, settings, logger)
     if test or settings.isEnabled("QoLforSacriel_EnableEquipment") ~= true
         or settings.get("QoLforSacriel_Equipment_EnablePresets") ~= true
+        or settings.get("QoLforSacriel_Equipment_EnableMannequinMenu") ~= true
     then
         return
     end

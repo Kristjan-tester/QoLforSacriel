@@ -417,6 +417,7 @@ function CoreModOptions.register(logger)
     options:addTitle("UI_QoLforSacriel_Modules_EquipmentTitle")
     options:addTickBox("enableEquipment", "UI_QoLforSacriel_Modules_EnableEquipment", true, "UI_QoLforSacriel_Modules_EnableEquipment_Tooltip")
     options:addTickBox("equipmentEnablePresets", "UI_QoLforSacriel_Modules_EquipmentEnablePresets", true, "UI_QoLforSacriel_Modules_EquipmentEnablePresets_Tooltip")
+    options:addTickBox("equipmentEnableMannequinMenu", "UI_QoLforSacriel_Modules_EquipmentEnableMannequinMenu", true, "UI_QoLforSacriel_Modules_EquipmentEnableMannequinMenu_Tooltip")
     local equipmentPresetCountOption = options:addComboBox("equipmentPresetCount", "UI_QoLforSacriel_Modules_EquipmentPresetCount", "UI_QoLforSacriel_Modules_EquipmentPresetCount_Tooltip")
     for i = 1, 8 do
         equipmentPresetCountOption:addItem("UI_QoLforSacriel_Modules_EquipmentPresetCount_" .. tostring(i), i == 2)
