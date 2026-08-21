@@ -7,6 +7,7 @@ local REST_SPEED_MULTIPLIER = 20
 local NORMAL_SPEED_MULTIPLIER = 1
 local REST_SPEED_SETTLE_SECONDS = 0.35
 local RECENT_SLEEP_COOLDOWN_HOURS = 1
+local NEARBY_BED_RADIUS = 3
 
 local function applyGameSpeed(multiplier)
     local targetMultiplier = tonumber(multiplier) or NORMAL_SPEED_MULTIPLIER
@@ -88,6 +89,16 @@ local function getLabel()
         return translated
     end
     return "Rest Until Sleepy"
+end
+
+local function getTextSafe(key, fallback)
+    local translated = getTextOrNull(key)
+    return translated and translated ~= "" and translated or fallback
+end
+
+local function getSleepyThreshold(settings)
+    local threshold = tonumber(settings.get("QoLforSacriel_RestSleep_SleepyThreshold")) or 0.3
+    return math.max(0.0, math.min(1.0, threshold))
 end
 
 local function shouldOffer(playerObj)
@@ -184,8 +195,7 @@ end
 
 local function beginRestUntilSleepy(playerObj, settings, forceStartedRest)
     local idx = playerObj:getPlayerNum() or 0
-    local threshold = tonumber(settings.get("QoLforSacriel_RestSleep_SleepyThreshold")) or 0.3
-    threshold = math.max(0.0, math.min(1.0, threshold))
+    local threshold = getSleepyThreshold(settings)
     local startedRest = forceStartedRest == true or isCurrentlyResting(playerObj)
     local now = getTimestamp()
 
@@ -244,6 +254,187 @@ local function onSelect(playerObj, actionOption, settings, logger)
     beginRestUntilSleepy(playerObj, settings)
 end
 
+local function hasSleepThreat(playerObj)
+    local stats = playerObj and playerObj:getStats()
+    if not stats then
+        return true
+    end
+
+    return (stats.getNumVisibleZombies and stats:getNumVisibleZombies() > 0)
+        or (stats.getNumChasingZombies and stats:getNumChasingZombies() > 0)
+        or (stats.getNumVeryCloseZombies and stats:getNumVeryCloseZombies() > 0)
+end
+
+local function canOfferNearbyBedSleep(playerObj, settings)
+    if not shouldOffer(playerObj) or hasTimedActionInProgress(playerObj) or hasSleepThreat(playerObj) then
+        return false
+    end
+
+    local stats = playerObj:getStats()
+    if not stats or stats:get(CharacterStat.FATIGUE) < getSleepyThreshold(settings) then
+        return false
+    end
+
+    local tabletEffect = playerObj.getSleepingTabletEffect and playerObj:getSleepingTabletEffect() or 0
+    if tabletEffect >= 2000 then
+        return true
+    end
+
+    if getSafeMoodleLevel(playerObj, MoodleType.PAIN, 0) >= 2 and stats:get(CharacterStat.FATIGUE) <= 0.85 then
+        return false
+    end
+
+    return getSafeMoodleLevel(playerObj, MoodleType.PANIC, 0) < 1
+end
+
+local function getBedKey(bed)
+    if not bed or not bed.getSquare then
+        return nil
+    end
+
+    local ok, square = pcall(bed.getSquare, bed)
+    if not ok or not square then
+        return nil
+    end
+
+    local minX = square:getX()
+    local minY = square:getY()
+    local z = square:getZ()
+    if bed.hasSpriteGrid and bed.getSpriteGridObjectsIncludingSelf then
+        local objects = ArrayList.new()
+        local gridOk = pcall(bed.getSpriteGridObjectsIncludingSelf, bed, objects)
+        if gridOk then
+            for index = 0, objects:size() - 1 do
+                local gridObject = objects:get(index)
+                local gridSquare = gridObject and gridObject:getSquare() or nil
+                if gridSquare then
+                    minX = math.min(minX, gridSquare:getX())
+                    minY = math.min(minY, gridSquare:getY())
+                end
+            end
+        end
+    end
+
+    return tostring(minX) .. ":" .. tostring(minY) .. ":" .. tostring(z)
+end
+
+local function getBedLabel(playerObj, candidate)
+    local quality = candidate.quality or "averageBed"
+    local pillow = string.find(quality, "Pillow", 1, true) ~= nil
+    local baseQuality = string.gsub(quality, "Pillow", "")
+    local qualityKey = "UI_QoLforSacriel_SleepNearestBed_Quality_" .. baseQuality
+    local qualityLabel = getTextSafe(qualityKey, baseQuality)
+    local pillowLabel = pillow
+        and getTextSafe("UI_QoLforSacriel_SleepNearestBed_PillowYes", "Pillow: yes")
+        or getTextSafe("UI_QoLforSacriel_SleepNearestBed_PillowNo", "Pillow: no")
+    return qualityLabel
+        .. " | " .. pillowLabel
+        .. " | " .. string.format(getTextSafe("UI_QoLforSacriel_SleepNearestBed_Distance", "%.1f tiles"), math.sqrt(candidate.distanceSquared))
+end
+
+local function isBadBedQuality(quality)
+    return type(quality) == "string" and string.find(quality, "badBed", 1, true) ~= nil
+end
+
+local function findNearbyBeds(playerObj)
+    local playerSquare = playerObj:getSquare()
+    local cell = playerSquare and playerSquare:getCell() or nil
+    if not cell then
+        return {}
+    end
+
+    local playerX = playerSquare:getX()
+    local playerY = playerSquare:getY()
+    local z = playerSquare:getZ()
+    local candidates = {}
+    local seen = {}
+    local order = 0
+
+    for y = playerY - NEARBY_BED_RADIUS, playerY + NEARBY_BED_RADIUS do
+        for x = playerX - NEARBY_BED_RADIUS, playerX + NEARBY_BED_RADIUS do
+            local square = cell:getGridSquare(x, y, z)
+            local bed = square and square:getBed() or nil
+            local key = getBedKey(bed)
+            if key and not seen[key] then
+                seen[key] = true
+                local qualityOk, quality = pcall(ISWorldObjectContextMenu.getBedQuality, playerObj, bed)
+                local bedQuality = qualityOk and tostring(quality) or nil
+                if not isBadBedQuality(bedQuality) then
+                    order = order + 1
+                    table.insert(candidates, {
+                        bed = bed,
+                        quality = bedQuality,
+                        distanceSquared = (x - playerX) * (x - playerX) + (y - playerY) * (y - playerY),
+                        x = x,
+                        y = y,
+                        order = order,
+                    })
+                end
+            end
+        end
+    end
+
+    table.sort(candidates, function(left, right)
+        if left.distanceSquared ~= right.distanceSquared then
+            return left.distanceSquared < right.distanceSquared
+        end
+        if left.y ~= right.y then
+            return left.y < right.y
+        end
+        if left.x ~= right.x then
+            return left.x < right.x
+        end
+        return left.order < right.order
+    end)
+    return candidates
+end
+
+local function selectNearbyBedSleep(playerObj, bed, logger)
+    if not playerObj or not bed or not bed:getSquare() then
+        if logger and logger.debug then
+            logger.debug("RestUntilSleepy nearby bed unavailable at selection")
+        end
+        return
+    end
+
+    local playerIndex = playerObj:getPlayerNum() or 0
+    local restState = activeByPlayer[playerIndex]
+    activeByPlayer[playerIndex] = nil
+    if restState and restState.speedBoostApplied then
+        applyGameSpeed(NORMAL_SPEED_MULTIPLIER)
+    end
+
+    ISWorldObjectContextMenu.onSleep(bed, playerObj:getPlayerNum())
+end
+
+local function addNearbyBedSleepOption(playerIndex, context, settings, logger)
+    local playerObj = getSpecificPlayer(playerIndex)
+    if not canOfferNearbyBedSleep(playerObj, settings) then
+        return
+    end
+
+    local beds = findNearbyBeds(playerObj)
+    if #beds == 0 then
+        return
+    end
+
+    local root = context:addOption(getTextSafe("UI_QoLforSacriel_SleepNearestBed", "Sleep in nearest bed"))
+    if #beds == 1 then
+        root.onSelect = function()
+            selectNearbyBedSleep(playerObj, beds[1].bed, logger)
+        end
+        return
+    end
+
+    local subMenu = context:getNew(context)
+    context:addSubMenu(root, subMenu)
+    for _, candidate in ipairs(beds) do
+        subMenu:addOption(getBedLabel(playerObj, candidate), playerObj, function(selectedPlayer, selectedBed)
+            selectNearbyBedSleep(selectedPlayer, selectedBed, logger)
+        end, candidate.bed)
+    end
+end
+
 local function onFillWorldObjectContextMenu(playerIndex, context, worldobjects, test, settings, logger)
     if settings.isEnabled("QoLforSacriel_EnableRestSleep") ~= true then
         return
@@ -270,6 +461,8 @@ local function onFillWorldObjectContextMenu(playerIndex, context, worldobjects, 
             end
         end
     end
+
+    addNearbyBedSleepOption(playerIndex, context, settings, logger)
 end
 
 local function shouldInterruptOnThreat(playerObj)

@@ -35,14 +35,11 @@ local LEGACY_FOOD_TAG = "Food"
 local FOOD_ALL_TAG = "Food.All"
 local FOOD_FROZEN_TAG = "Food.Frozen"
 
-local MATERIAL_BASIC_TAG_LIST = {
-    "Material.Bone", "Material.Steel", "Material.Cotton", "Material.Fibre", "Material.Iron",
-    "Material.Other", "Material.Repair", "Material.Stone", "Material.Wood",
-}
-
-local MATERIAL_ADVANCED_TAG_LIST = {
-    "Material.Aluminum", "Material.Brass", "Material.Copper", "Material.Gold", "Material.Glass", "Material.Paint",
-    "Material.Leather", "Material.Silver", "Material.Clay", "Material.Charcoal", "Material.ToolHead", "Material.Wallpaper",
+local MATERIAL_TAG_LIST = {
+    "Material.Aluminum", "Material.Bone", "Material.Brass", "Material.Charcoal", "Material.Clay", "Material.Copper",
+    "Material.Cotton", "Material.Fibre", "Material.Glass", "Material.Gold", "Material.Iron", "Material.Leather",
+    "Material.Other", "Material.Paint", "Material.Repair", "Material.Silver", "Material.Steel", "Material.Stone",
+    "Material.ToolHead", "Material.Wallpaper", "Material.Wood",
 }
 
 local FOOD_TAG_LIST = {
@@ -246,10 +243,7 @@ TAG_CATALOG[EVERYTHING_ELSE_TAG] = true
 for _, tag in ipairs(BASIC_TAG_LIST) do
     TAG_CATALOG[tag] = true
 end
-for _, tag in ipairs(MATERIAL_BASIC_TAG_LIST) do
-    TAG_CATALOG[tag] = true
-end
-for _, tag in ipairs(MATERIAL_ADVANCED_TAG_LIST) do
+for _, tag in ipairs(MATERIAL_TAG_LIST) do
     TAG_CATALOG[tag] = true
 end
 for _, tag in ipairs(FOOD_TAG_LIST) do
@@ -268,10 +262,7 @@ for _, tag in ipairs(BASIC_TAG_LIST) do
 end
 
 local MATERIAL_TAG_SET = {}
-for _, tag in ipairs(MATERIAL_BASIC_TAG_LIST) do
-    MATERIAL_TAG_SET[tag] = true
-end
-for _, tag in ipairs(MATERIAL_ADVANCED_TAG_LIST) do
+for _, tag in ipairs(MATERIAL_TAG_LIST) do
     MATERIAL_TAG_SET[tag] = true
 end
 
@@ -467,6 +458,13 @@ local function getVehicleContainerLabel(container)
 end
 
 local function getContainerLabel(container)
+    local parent = callMethod(container, "getParent")
+    if parent then
+        local customName = callMethod(container, "getCustomName")
+        if customName and customName ~= "" then
+            return tostring(customName)
+        end
+    end
     local vehicleLabel = getVehicleContainerLabel(container)
     if vehicleLabel then
         return vehicleLabel
@@ -476,7 +474,7 @@ local function getContainerLabel(container)
     if itemName and itemName ~= "" then
         return tostring(itemName)
     end
-    local parentName = callMethod(callMethod(container, "getParent"), "getName")
+    local parentName = callMethod(parent, "getName")
     if parentName and parentName ~= "" then
         return tostring(parentName)
     end
@@ -1313,11 +1311,11 @@ local function openTagPopup(container, lootWindow)
 
     local function configureMaterialTags()
         openSpecificTagPopup({
-            basicTags = MATERIAL_BASIC_TAG_LIST,
-            advancedTags = MATERIAL_ADVANCED_TAG_LIST,
+            basicTags = MATERIAL_TAG_LIST,
             tickBoxId = "QoLforSacriel.OrganizedInventory.Material",
             titleKey = "UI_QoLforSacriel_OrganizedInventoryConfigureMaterialTags",
             titleFallback = "Add material tags",
+            useScrollBars = false,
         }, materialTags, function(selectedTags)
             materialTags = selectedTags
             if hasSelectedTags(selectedTags) then

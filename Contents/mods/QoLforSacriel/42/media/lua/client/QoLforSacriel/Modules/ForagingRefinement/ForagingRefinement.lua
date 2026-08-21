@@ -3,12 +3,14 @@ local ForagingRefinement = {}
 
 require "Foraging/ISSearchManager"
 require "Foraging/ISSearchWindow"
+require "Foraging/ISZoneDisplay"
 require "Foraging/ISBaseIcon"
 require "ISUI/ISComboBox"
 
 local coreModOptions = require "QoLforSacriel/CoreModOptions"
 
 local MODULE_SETTING = "QoLforSacriel_EnableForagingRefinement"
+local VISION_TOOLTIP_SETTING = "QoLforSacriel_ForagingRefinement_EnableVisionTooltip"
 local PIN_COLOR_SETTING = "QoLforSacriel_ForagingRefinement_PinColorPreset"
 local MODE_NO = 1
 local MODE_HIDE = 2
@@ -28,13 +30,20 @@ local settingsRef = nil
 local loggerRef = nil
 local originalSearchWindowInitialise = nil
 local originalWorldItemTest = nil
+local originalGetVisionTooltipText = nil
 local originalRenderPinIcon = nil
 local modeByPlayer = {}
+local visionTooltipFailureLogged = false
 
 local function isModuleEnabled()
     return settingsRef
         and settingsRef.isEnabled()
         and settingsRef.isEnabled(MODULE_SETTING) == true
+end
+
+local function isVisionTooltipEnabled()
+    return isModuleEnabled()
+        and settingsRef.isEnabled(VISION_TOOLTIP_SETTING) == true
 end
 
 local function clearWorldItemIcons(manager)
@@ -68,6 +77,86 @@ local function getPinColorPreset()
     local preset = settingsRef and settingsRef.get and tonumber(settingsRef.get(PIN_COLOR_SETTING)) or MODE_NO
     preset = math.floor(preset or MODE_NO)
     return PIN_COLOR_PRESETS[preset] or PIN_COLOR_PRESETS[MODE_NO]
+end
+
+local function logVisionTooltipFailure(reason)
+    if visionTooltipFailureLogged then
+        return
+    end
+    visionTooltipFailureLogged = true
+    if loggerRef and loggerRef.debug then
+        loggerRef.debug("ForagingRefinement vision tooltip unavailable: " .. tostring(reason))
+    end
+end
+
+local function getVisionTooltipColor(useGoodHighlight)
+    local color = useGoodHighlight
+        and getCore():getGoodHighlitedColor()
+        or getCore():getBadHighlitedColor()
+    return " <RGB:" .. color:getR() .. "," .. color:getG() .. "," .. color:getB() .. "> "
+end
+
+local function appendVisionTooltipHeader(text)
+    return text
+        .. " <LINE> "
+        .. " <RGB:1,1,1> "
+        .. getText("UI_QoLforSacriel_ForagingRefinement_VisionHeader")
+        .. " <LINE> "
+end
+
+local function appendSkillBaseRow(text, perkLevel)
+    local label = getText("UI_QoLforSacriel_ForagingRefinement_VisionSkill")
+        .. " "
+        .. tostring(math.floor(perkLevel))
+        .. ": "
+        .. getText("UI_QoLforSacriel_ForagingRefinement_VisionBase")
+        .. " "
+        .. string.format("%.2f", 3 + 0.7 * perkLevel)
+    return text .. " <RGB:1,1,1> " .. label .. " <LINE> "
+end
+
+local function getBodyConditionContributor(character)
+    local stats = character and character.getStats and character:getStats()
+    if not stats or not CharacterStat then
+        return nil
+    end
+
+    local contributors = {
+        { stat = CharacterStat.PAIN, scale = 100, label = "UI_QoLforSacriel_ForagingRefinement_VisionBodyPain" },
+        { stat = CharacterStat.SICKNESS, scale = 1, label = "UI_QoLforSacriel_ForagingRefinement_VisionBodySickness" },
+        { stat = CharacterStat.FOOD_SICKNESS, scale = 100, label = "UI_QoLforSacriel_ForagingRefinement_VisionBodyFoodSickness" },
+        { stat = CharacterStat.INTOXICATION, scale = 100, label = "UI_QoLforSacriel_ForagingRefinement_VisionBodyIntoxication" },
+    }
+    local highestValue = 0
+    local highestLabel = nil
+
+    for _, contributor in ipairs(contributors) do
+        local value = stats:get(contributor.stat) / contributor.scale
+        if value > highestValue then
+            highestValue = value
+            highestLabel = contributor.label
+        end
+    end
+
+    return highestLabel and getText(highestLabel) or nil
+end
+
+local function appendModifierRow(text, translationKey, multiplier, contributor)
+    local percent = (multiplier - 1) * 100
+    if percent == 0 then
+        return text
+    end
+
+    local color = getVisionTooltipColor(multiplier > 1)
+    return text
+        .. " <RGB:1,1,1> "
+        .. getText(translationKey)
+        .. ": <SPACE> "
+        .. color
+        .. string.format("%+.2f", percent)
+        .. " \%"
+        .. (contributor and " (" .. contributor .. ")" or "")
+        .. " <LINE> "
 end
 
 local function updateWindowLayout(window)
@@ -173,6 +262,51 @@ local function patchWorldItemFilter()
     return true
 end
 
+local function patchVisionTooltip()
+    if not ISZoneDisplay or not ISZoneDisplay.getVisionTooltipText then
+        return false
+    end
+
+    originalGetVisionTooltipText = ISZoneDisplay.getVisionTooltipText
+    ISZoneDisplay.getVisionTooltipText = function(display)
+        local text = originalGetVisionTooltipText(display)
+        if not isVisionTooltipEnabled() then
+            return text
+        end
+
+        local manager = display and display.manager
+        local modifiers = manager and manager.modifiers
+        if type(text) ~= "string" or type(manager) ~= "table" or type(modifiers) ~= "table" then
+            logVisionTooltipFailure("manager or modifiers are unavailable")
+            return text
+        end
+
+        local perkLevel = manager.perkLevel
+        local panicPenalty = modifiers.panicPenalty
+        local bodyPenalty = modifiers.bodyPenalty
+        local exhaustionPenalty = modifiers.exhaustionPenalty
+        if type(perkLevel) ~= "number"
+            or type(panicPenalty) ~= "number"
+            or type(bodyPenalty) ~= "number"
+            or type(exhaustionPenalty) ~= "number" then
+            logVisionTooltipFailure("expected numeric Foraging modifiers")
+            return text
+        end
+
+        text = appendVisionTooltipHeader(text)
+        text = appendSkillBaseRow(text, perkLevel)
+        text = appendModifierRow(text, "UI_QoLforSacriel_ForagingRefinement_VisionPanicStress", panicPenalty)
+        text = appendModifierRow(
+            text,
+            "UI_QoLforSacriel_ForagingRefinement_VisionBodyCondition",
+            bodyPenalty,
+            getBodyConditionContributor(display.character)
+        )
+        return appendModifierRow(text, "UI_QoLforSacriel_ForagingRefinement_VisionEnduranceFatigue", exhaustionPenalty)
+    end
+    return true
+end
+
 local function patchPhysicalPinRenderer()
     if not ISBaseIcon or not ISBaseIcon.renderPinIcon then
         return false
@@ -207,6 +341,17 @@ local function patchPhysicalPinRenderer()
     return true
 end
 
+local function hasRequiredVanillaApis()
+    return ISSearchWindow
+        and ISSearchWindow.initialise
+        and ISSearchManager
+        and ISSearchManager.worldItemTest
+        and ISZoneDisplay
+        and ISZoneDisplay.getVisionTooltipText
+        and ISBaseIcon
+        and ISBaseIcon.renderPinIcon
+end
+
 function ForagingRefinement.init(settings, logger)
     if installed then
         return
@@ -215,12 +360,17 @@ function ForagingRefinement.init(settings, logger)
     settingsRef = settings
     loggerRef = logger
 
-    if not patchSearchWindow() or not patchWorldItemFilter() or not patchPhysicalPinRenderer() then
+    if not hasRequiredVanillaApis() then
         if loggerRef and loggerRef.error then
             loggerRef.error("ForagingRefinement unavailable: expected vanilla Search Mode APIs are missing")
         end
         return
     end
+
+    patchSearchWindow()
+    patchWorldItemFilter()
+    patchVisionTooltip()
+    patchPhysicalPinRenderer()
 
     coreModOptions.addApplyListener(function()
         refreshSearchWindows()

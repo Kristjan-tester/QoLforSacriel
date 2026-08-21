@@ -7,6 +7,24 @@ local loggerRef = nil
 local activeEatChains = {}
 local queueEatChainRefreshAction = nil
 local getEatStatusDebugText = nil
+local getHungerValue = nil
+local getPreciseEatPercentage = nil
+local getBurstingEatPercentage = nil
+local hasReachedHungerTarget = nil
+
+local EAT_MODE_ALL = "all"
+local EAT_MODE_STACK_UNTIL_NOT_HUNGRY = "stack-until-not-hungry"
+local EAT_MODE_SINGLE_UNTIL_NOT_HUNGRY = "single-until-not-hungry"
+local EAT_MODE_UNTIL_BURSTING = "until-bursting"
+local HUNGER_POINTS_SCALE = 100
+local MIN_PRECISE_HUNGER_POINTS = 1
+local HUNGRY_MOODLE_THRESHOLD = 0.15
+local HUNGER_TARGET_POINTS_MAX = 15
+local BURSTING_FOOD_TIMER_MIN = 3301
+local BURSTING_FOOD_TIMER_MAX = 3900
+local FOOD_TIMER_PER_HUNGER = 13000
+local TIMER_TARGET_MARGIN = 1
+local VANILLA_MIN_REMAINING_HUNGER = 0.01
 
 local function logDebug(message)
     if not loggerRef or not loggerRef.debug then
@@ -278,27 +296,17 @@ local function hasOpeningRecipe(item)
 end
 
 local function isChainEligibleFood(item)
-    if not isFoodItem(item) then
+    if not isFoodItem(item) or hasOpeningRecipe(item) or not item.getHungChange then
         return false
     end
 
-    if hasOpeningRecipe(item) then
-        return true
-    end
-
-    if item.getHungChange then
-        local ok, hungChange = pcall(function()
-            return item:getHungChange()
-        end)
-        if ok and tonumber(hungChange) and tonumber(hungChange) < 0 then
-            return true
-        end
-    end
-
-    return false
+    local ok, hungChange = pcall(function()
+        return item:getHungChange()
+    end)
+    return ok and tonumber(hungChange) and tonumber(hungChange) < 0
 end
 
-local function buildEatCandidatesFromSelection(items)
+local function buildOrdinaryEatCandidatesFromSelection(items)
     local actualItems = getActualItems(items)
     local result = {}
     for i = 1, #actualItems do
@@ -308,48 +316,6 @@ local function buildEatCandidatesFromSelection(items)
         end
     end
     return result
-end
-
-local function resolveOpeningRecipe(item, playerObj)
-    if not item or not playerObj or not item.getOpeningRecipe then
-        return nil
-    end
-
-    local openingRecipeName = item:getOpeningRecipe()
-    if not openingRecipeName or openingRecipeName == "" then
-        return nil
-    end
-
-    if not getScriptManager then
-        return nil
-    end
-
-    local scriptRecipe = getScriptManager():getCraftRecipe(openingRecipeName)
-    if not scriptRecipe then
-        return nil
-    end
-
-    if not ISInventoryPaneContextMenu
-        or type(ISInventoryPaneContextMenu.getContainers) ~= "function"
-        or not HandcraftLogic
-        or not HandcraftLogic.new
-    then
-        return nil
-    end
-
-    local containers = ISInventoryPaneContextMenu.getContainers(playerObj)
-    if not containers then
-        return nil
-    end
-
-    local logic = HandcraftLogic.new(playerObj, nil, nil)
-    logic:setContainers(containers)
-    logic:setRecipeFromContextClick(scriptRecipe, item)
-    if logic:canPerformCurrentRecipe() then
-        return scriptRecipe
-    end
-
-    return nil
 end
 
 local function hasAnyTimedActionInProgress(playerObj)
@@ -459,7 +425,64 @@ local function tryQueueEatItem(playerObj, item, playerIndex, chain)
         return false
     end
 
-    local action = ISEatFoodAction:new(playerObj, item, 1)
+    local percentage = 1
+    if chain.mode == EAT_MODE_SINGLE_UNTIL_NOT_HUNGRY and getPreciseEatPercentage then
+        local precisePercentage, rawHunger, effectiveRemoval, requestedPoints, forcedFull = getPreciseEatPercentage(playerObj, item, chain.hungerTarget)
+        if not precisePercentage then
+            logDebug("precise eat skipped: hunger target reached or item is no longer eligible")
+            return false
+        end
+        percentage = precisePercentage
+        logDebug(
+            "precise eat percentage=" .. tostring(percentage)
+            .. ", hunger=" .. tostring(rawHunger)
+            .. ", target=" .. tostring(chain.hungerTarget)
+            .. ", effectiveRemoval=" .. tostring(effectiveRemoval)
+            .. ", requestedPoints=" .. tostring(requestedPoints)
+            .. ", forcedFull=" .. tostring(forcedFull)
+        )
+    elseif chain.mode == EAT_MODE_UNTIL_BURSTING then
+        local burstingPercentage, foodTimer, timerPerFullItem, forcedFull = getBurstingEatPercentage(playerObj, item, chain.burstingTimerTarget)
+        percentage = burstingPercentage
+        if percentage < 1 then
+            logDebug(
+                "bursting eat percentage=" .. tostring(percentage)
+                .. ", foodTimer=" .. tostring(foodTimer)
+                .. ", target=" .. tostring(chain.burstingTimerTarget)
+                .. ", timerPerFullItem=" .. tostring(timerPerFullItem)
+                .. ", forcedFull=" .. tostring(forcedFull)
+            )
+        end
+    end
+
+    local action = ISEatFoodAction:new(playerObj, item, percentage)
+
+    if chain.mode == EAT_MODE_STACK_UNTIL_NOT_HUNGRY then
+        action.isValidStart = function()
+            return true
+        end
+    end
+
+    if chain.mode == EAT_MODE_SINGLE_UNTIL_NOT_HUNGRY or chain.mode == EAT_MODE_STACK_UNTIL_NOT_HUNGRY then
+        action.start = function(self)
+            if hasReachedHungerTarget(playerObj, chain) then
+                self.qolSkipEat = true
+                self.percentage = 0
+                self.maxTime = 1
+                logDebug("eat skipped before vanilla start: hunger target reached")
+                return
+            end
+
+            ISEatFoodAction.start(self)
+        end
+
+        action.complete = function(self)
+            if self.qolSkipEat then
+                return true
+            end
+            return ISEatFoodAction.complete(self)
+        end
+    end
 
     action.perform = function(self)
         local refreshAction = nil
@@ -547,7 +570,7 @@ local function tryQueueEatItem(playerObj, item, playerIndex, chain)
 
     chain.pendingAction = action
     chain.lastActionCompleted = false
-    chain.canWalkToFirstItem = false
+    chain.canWalkToFirstItem = true
     logDebug(
         "eat queue attempt: item='" .. getItemDebugLabel(item)
         .. "', before=" .. tostring(beforeCount)
@@ -581,7 +604,7 @@ local function isHungry(playerObj)
             return stats:get(CharacterStat.HUNGER)
         end)
         if okStat and tonumber(hungerValue) then
-            return tonumber(hungerValue) > 0.01
+            return tonumber(hungerValue) > HUNGRY_MOODLE_THRESHOLD
         end
     end
 
@@ -607,7 +630,25 @@ local function getFoodEatenLevel(playerObj)
     return nil
 end
 
-local function getHungerValue(playerObj)
+local function getFoodEatenTimer(playerObj)
+    if not playerObj or not playerObj.getBodyDamage then
+        return nil
+    end
+
+    local okBodyDamage, bodyDamage = pcall(function()
+        return playerObj:getBodyDamage()
+    end)
+    if not okBodyDamage or not bodyDamage or not bodyDamage.getHealthFromFoodTimer then
+        return nil
+    end
+
+    local okTimer, foodTimer = pcall(function()
+        return bodyDamage:getHealthFromFoodTimer()
+    end)
+    return okTimer and tonumber(foodTimer) or nil
+end
+
+getHungerValue = function(playerObj)
     if not playerObj or not CharacterStat then
         return nil
     end
@@ -626,6 +667,128 @@ local function getHungerValue(playerObj)
     return nil
 end
 
+local function clamp(value, minimum, maximum)
+    return math.max(minimum, math.min(maximum, value))
+end
+
+local function getRandomInclusive(minimum, maximum)
+    if type(ZombRand) ~= "function" then
+        return minimum
+    end
+
+    local ok, value = pcall(ZombRand, maximum - minimum + 1)
+    if not ok or not tonumber(value) then
+        return minimum
+    end
+
+    return minimum + clamp(math.floor(tonumber(value)), 0, maximum - minimum)
+end
+
+local function getRandomHungerTarget()
+    return getRandomInclusive(0, HUNGER_TARGET_POINTS_MAX) / HUNGER_POINTS_SCALE
+end
+
+local function getRandomBurstingTimerTarget()
+    return getRandomInclusive(BURSTING_FOOD_TIMER_MIN, BURSTING_FOOD_TIMER_MAX)
+end
+
+local function getNumericFoodValue(item, methodName)
+    if not item or not methodName or type(item[methodName]) ~= "function" then
+        return nil
+    end
+
+    local ok, value = pcall(function()
+        return item[methodName](item)
+    end)
+    return ok and tonumber(value) or nil
+end
+
+local function getEffectiveHungerRemoval(item)
+    local hungerChange = getNumericFoodValue(item, "getHungerChange")
+    if hungerChange and hungerChange < 0 then
+        return -hungerChange
+    end
+    return nil
+end
+
+local function getActionPercentageForCurrentFoodFraction(item, desiredFraction)
+    local percentage = clamp(desiredFraction, 0, 1)
+    local baseHunger = getNumericFoodValue(item, "getBaseHunger")
+    local hungChange = getNumericFoodValue(item, "getHungChange")
+    local forcedFull = false
+
+    if baseHunger and baseHunger ~= 0 and hungChange and hungChange < 0 then
+        local remainingFraction = math.abs(hungChange) / math.abs(baseHunger)
+        percentage = clamp(percentage * remainingFraction, 0, 1)
+
+        local vanillaUsedPercentage = clamp(percentage / remainingFraction, 0, 1)
+        if math.abs(hungChange) * (1 - vanillaUsedPercentage) < VANILLA_MIN_REMAINING_HUNGER then
+            percentage = 1
+            forcedFull = true
+        end
+    end
+
+    return percentage, forcedFull
+end
+
+getPreciseEatPercentage = function(playerObj, item, hungerTarget)
+    local rawHunger = getHungerValue(playerObj)
+    local effectiveRemoval = getEffectiveHungerRemoval(item)
+    if not rawHunger or rawHunger <= hungerTarget or not effectiveRemoval or effectiveRemoval <= 0 then
+        return nil
+    end
+
+    local requestedPoints = math.max(
+        MIN_PRECISE_HUNGER_POINTS,
+        math.ceil((rawHunger - hungerTarget) * HUNGER_POINTS_SCALE)
+    )
+    local requestedRemoval = requestedPoints / HUNGER_POINTS_SCALE
+    local percentage, forcedFull = getActionPercentageForCurrentFoodFraction(item, requestedRemoval / effectiveRemoval)
+
+    return percentage, rawHunger, effectiveRemoval, requestedPoints, forcedFull
+end
+
+local function isCookedFood(item)
+    if not item or not item.isCooked then
+        return false
+    end
+
+    local ok, cooked = pcall(function()
+        return item:isCooked()
+    end)
+    return ok and cooked == true
+end
+
+getBurstingEatPercentage = function(playerObj, item, timerTarget)
+    local foodTimer = getFoodEatenTimer(playerObj)
+    local rawHunger = getHungerValue(playerObj)
+    local effectiveRemoval = getEffectiveHungerRemoval(item)
+    if not foodTimer or not rawHunger or not effectiveRemoval or effectiveRemoval <= 0 then
+        return 1
+    end
+
+    if foodTimer >= timerTarget then
+        return 1
+    end
+
+    local timerPerFullItem = effectiveRemoval * FOOD_TIMER_PER_HUNGER
+    if isCookedFood(item) then
+        timerPerFullItem = timerPerFullItem * 2
+    end
+
+    if timerPerFullItem <= 0 then
+        return 1
+    end
+
+    local desiredFraction = (timerTarget - foodTimer + TIMER_TARGET_MARGIN) / timerPerFullItem
+    if desiredFraction >= 1 or desiredFraction * effectiveRemoval < rawHunger then
+        return 1
+    end
+
+    local percentage, forcedFull = getActionPercentageForCurrentFoodFraction(item, desiredFraction)
+    return percentage, foodTimer, timerPerFullItem, forcedFull
+end
+
 getEatStatusDebugText = function(playerObj)
     return "hunger=" .. tostring(getHungerValue(playerObj))
         .. ", foodEaten=" .. tostring(getFoodEatenLevel(playerObj))
@@ -634,6 +797,19 @@ end
 local function canContinueEating(playerObj)
     local foodEatenLevel = getFoodEatenLevel(playerObj)
     return foodEatenLevel == nil or foodEatenLevel < 3
+end
+
+local function hasReachedBurstingThreshold(playerObj, chain)
+    local foodTimer = getFoodEatenTimer(playerObj)
+    return foodTimer and chain and chain.burstingTimerTarget and foodTimer >= chain.burstingTimerTarget
+end
+
+hasReachedHungerTarget = function(playerObj, chain)
+    local rawHunger = getHungerValue(playerObj)
+    if rawHunger and chain and chain.hungerTarget then
+        return rawHunger <= chain.hungerTarget or not isHungry(playerObj)
+    end
+    return not isHungry(playerObj)
 end
 
 local function clearEatChain(playerIndex)
@@ -648,13 +824,21 @@ local function runEatChainStep(playerObj, chain)
         return
     end
 
-    if chain.mode == "until-not-hungry" and not isHungry(playerObj) then
-        logDebug("eat chain stopped: hunger cleared, " .. getEatStatusDebugText(playerObj))
+    if (chain.mode == EAT_MODE_STACK_UNTIL_NOT_HUNGRY or chain.mode == EAT_MODE_SINGLE_UNTIL_NOT_HUNGRY)
+        and hasReachedHungerTarget(playerObj, chain)
+    then
+        logDebug("eat chain stopped: hunger target reached, " .. getEatStatusDebugText(playerObj))
         clearEatChain(playerIndex)
         return
     end
 
-    if not canContinueEating(playerObj) then
+    if chain.mode == EAT_MODE_UNTIL_BURSTING and hasReachedBurstingThreshold(playerObj, chain) then
+        logDebug("eat chain stopped: bursting target reached, " .. getEatStatusDebugText(playerObj))
+        clearEatChain(playerIndex)
+        return
+    end
+
+    if (chain.mode == EAT_MODE_ALL or chain.mode == EAT_MODE_UNTIL_BURSTING) and not canContinueEating(playerObj) then
         logDebug("eat chain stopped: too full to eat, " .. getEatStatusDebugText(playerObj))
         clearEatChain(playerIndex)
         return
@@ -732,6 +916,13 @@ local function startEatChain(playerObj, items, mode)
         return
     end
 
+    if (mode == EAT_MODE_SINGLE_UNTIL_NOT_HUNGRY or mode == EAT_MODE_STACK_UNTIL_NOT_HUNGRY)
+        and not isHungry(playerObj)
+    then
+        logDebug("eat chain not started: vanilla Hungry moodle is not active, " .. getEatStatusDebugText(playerObj))
+        return
+    end
+
     local playerIndex = playerObj:getPlayerNum()
     activeEatChains[playerIndex] = {
         mode = mode,
@@ -741,12 +932,20 @@ local function startEatChain(playerObj, items, mode)
         lastActionCompleted = false,
         cancelled = false,
         canWalkToFirstItem = true,
+        hungerTarget = (mode == EAT_MODE_SINGLE_UNTIL_NOT_HUNGRY or mode == EAT_MODE_STACK_UNTIL_NOT_HUNGRY)
+            and getRandomHungerTarget()
+            or nil,
+        burstingTimerTarget = mode == EAT_MODE_UNTIL_BURSTING
+            and getRandomBurstingTimerTarget()
+            or nil,
     }
 
     logDebug(
         "starting eat chain: player=" .. tostring(playerIndex)
         .. ", mode=" .. tostring(mode)
         .. ", candidates=" .. tostring(#items)
+        .. ", hungerTarget=" .. tostring(activeEatChains[playerIndex].hungerTarget)
+        .. ", burstingTimerTarget=" .. tostring(activeEatChains[playerIndex].burstingTimerTarget)
         .. ", " .. getEatStatusDebugText(playerObj)
     )
 
@@ -761,28 +960,58 @@ local function onEatAllChainSelected(items, playerIndex)
         return
     end
 
-    local candidates = buildEatCandidatesFromSelection(items)
+    local candidates = buildOrdinaryEatCandidatesFromSelection(items)
     if #candidates == 0 then
         logDebug("eat-all chain selected but found no candidates")
         return
     end
 
-    startEatChain(playerObj, candidates, "all")
+    startEatChain(playerObj, candidates, EAT_MODE_ALL)
 end
 
-local function onEatUntilNotHungrySelected(items, playerIndex)
+local function onEatStackUntilNotHungrySelected(items, playerIndex)
     local playerObj = getSpecificPlayer(playerIndex)
     if not playerObj then
         return
     end
 
-    local candidates = buildEatCandidatesFromSelection(items)
-    if #candidates == 0 then
-        logDebug("eat-until-not-hungry selected but found no candidates")
+    local candidates = buildOrdinaryEatCandidatesFromSelection(items)
+    if #candidates < 2 then
+        logDebug("eat-stack-until-not-hungry selected but found fewer than two candidates")
         return
     end
 
-    startEatChain(playerObj, candidates, "until-not-hungry")
+    startEatChain(playerObj, candidates, EAT_MODE_STACK_UNTIL_NOT_HUNGRY)
+end
+
+local function onEatSingleUntilNotHungrySelected(items, playerIndex)
+    local playerObj = getSpecificPlayer(playerIndex)
+    if not playerObj then
+        return
+    end
+
+    local candidates = buildOrdinaryEatCandidatesFromSelection(items)
+    if #candidates ~= 1 then
+        logDebug("single precise eat selected without exactly one candidate")
+        return
+    end
+
+    startEatChain(playerObj, candidates, EAT_MODE_SINGLE_UNTIL_NOT_HUNGRY)
+end
+
+local function onEatUntilBurstingSelected(items, playerIndex)
+    local playerObj = getSpecificPlayer(playerIndex)
+    if not playerObj then
+        return
+    end
+
+    local candidates = buildOrdinaryEatCandidatesFromSelection(items)
+    if #candidates == 0 then
+        logDebug("eat-until-bursting selected but found no candidates")
+        return
+    end
+
+    startEatChain(playerObj, candidates, EAT_MODE_UNTIL_BURSTING)
 end
 
 local function onTick()
@@ -853,12 +1082,12 @@ local function addEatChainOptions(playerIndex, context, items)
         return
     end
 
-    local candidates = buildEatCandidatesFromSelection(items)
-    if #candidates <= 1 then
+    local candidates = buildOrdinaryEatCandidatesFromSelection(items)
+    if #candidates == 0 then
         return
     end
 
-    if isFeatureEnabled("QoLforSacriel_UIFixes_EnableEatChainAll") then
+    if #candidates >= 2 and isFeatureEnabled("QoLforSacriel_UIFixes_EnableEatChainAll") then
         local label = getTextOrFallback("UI_QoLforSacriel_InventoryUpdate_EatAllChain", "Eat All (Chain)")
         if not eatSubMenu:getOptionFromName(label) then
             eatSubMenu:addOption(label, items, onEatAllChainSelected, playerIndex)
@@ -866,9 +1095,26 @@ local function addEatChainOptions(playerIndex, context, items)
     end
 
     if isFeatureEnabled("QoLforSacriel_UIFixes_EnableEatUntilNotHungry") then
-        local label = getTextOrFallback("UI_QoLforSacriel_InventoryUpdate_EatUntilNotHungry", "Eat Until Not Hungry")
-        if not eatSubMenu:getOptionFromName(label) then
-            eatSubMenu:addOption(label, items, onEatUntilNotHungrySelected, playerIndex)
+        if #candidates == 1 then
+            local label = getTextOrFallback("UI_QoLforSacriel_InventoryUpdate_EatUntilNotHungry", "Eat Until Not Hungry")
+            if not eatSubMenu:getOptionFromName(label) then
+                eatSubMenu:addOption(label, items, onEatSingleUntilNotHungrySelected, playerIndex)
+            end
+
+            local burstingLabel = getTextOrFallback("UI_QoLforSacriel_InventoryUpdate_EatUntilBursting", "Eat Until Bursting")
+            if not eatSubMenu:getOptionFromName(burstingLabel) then
+                eatSubMenu:addOption(burstingLabel, items, onEatUntilBurstingSelected, playerIndex)
+            end
+        else
+            local stackLabel = getTextOrFallback("UI_QoLforSacriel_InventoryUpdate_EatStackUntilNotHungry", "Eat Stack Until Not Hungry")
+            if not eatSubMenu:getOptionFromName(stackLabel) then
+                eatSubMenu:addOption(stackLabel, items, onEatStackUntilNotHungrySelected, playerIndex)
+            end
+
+            local burstingLabel = getTextOrFallback("UI_QoLforSacriel_InventoryUpdate_EatUntilBursting", "Eat Until Bursting")
+            if not eatSubMenu:getOptionFromName(burstingLabel) then
+                eatSubMenu:addOption(burstingLabel, items, onEatUntilBurstingSelected, playerIndex)
+            end
         end
     end
 end
