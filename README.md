@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.20 
+Current version: v0.21 
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -14,7 +14,11 @@ Current version: v0.20
 	- Made for single-player. Not tested in multiplayer.
  
 Features:
-- (NEW) - "Unload all" to nearby containers (tag them to hold specific category of items):
+
+- (NEW) Foraging panel:
+	- Updated Radius tooltip to include all relevant factors (that vanilla doesn't show)
+ 	- Clothing Fix (default off) - vanilla currently does not impose clothing penalties to forage radius. Enable fix from modoptions.
+-  "Unload all" to nearby containers (tag them to hold specific category of items):
 	- Click "unload all" in footer of main inventory or bags to start it
   	- there is 'everything else' category for 'catch all' option if containers with right tags
   	- (UPDATED) - Food and Material have extra filtering tags, to make management easier and more specific
@@ -26,20 +30,25 @@ Features:
 - (UPDATED) - Foraging panel now has filtering option for Pins: 
     - Show only foraging items (ignoring all dropped or other world items (car keys, etc.))
     - Colour pins for world items, so you can easily detect. (Colour can be changed in modoptions)
+    - Updated Radius tooltip to include all relevant factors (that vanilla doesn't show)
+    - Clothing Fix  (default off) - vanilla currently does not impose clothing penalties to forage radius. Enable fix from modoptions.
 - 'Add bait' now extends to nearby containers
 - 'Wash all' sorts by bloodiest
 - 'Put in container' extended for handheld items for all nearby containers 
 - Towels take linear amount of water - 1 towel is enough now to dry yourself.
 - Improve entering car, character will reorient themselves when close to door
-- Fitness tab in Info panel - indicate weight gain in detail, strength training xp, etc.
-- Switch off nearby device with keybind (CTRL+G) or context menu option - alarms, TV/Radio:
+- (NEW) Sleep in nearest bed - looks for beds (above bad quality) in 3 tile radios, and when selected walks to them and starts sleeping. Only shown when player can sleep.
+- (UPDATED) Fitness tab in Info panel - indicate weight gain in detail, strength training xp, etc.
+	- Shows basic 'score' of sleep and wake up reason, and general contributing factors. Score is compared to current character 'normal' state.
+ 	- 'Exact sleep stats' can be enabled from mod options, default off.
+  	- Vanilla code is not fully transparent, some wake up actions happen within java with no exposure to lua so can't detect them all, yet.
+- (UPDATED) Switch off nearby device with keybind (CTRL+G) or context menu option - alarms, TV/Radio:
 	- searches nearby 3 radius cells for active items to turn off, walks to them and turns off
  	- priority highest to lowest:
   		- Inventory item alarms
     	- Inventory devices
      	- World alarms
       	- World devices
-	- Known limitation : doesn't work for parcels or garbage bags (any container-in-container basically)      	  
 - Character Audio Rings - shows radius where the sounds travels when made. Important:
     - Zombies can hear sounds outside of that range (depending on their hearing: 0.45x ; 1x; 3x range)
     - Game does not generate sounds that one would expect - opening doors, using microwave, for example - testing all of them is tricky, let me know when you see inconsistencies. 
@@ -84,9 +93,10 @@ Features:
 - Handcrafting menu extended with tool selection submenus
     - Populates the context menu with all available tools for that craft, respects 'don't use for crafting' flags
 - "Take all rotten" and "take all stale" from container (right-click in that container)
-- Extended EAT menu to have 'eat all stack' and 'eat until not hungry'
+- (UPDATED) Extended EAT menu to have 'eat all stack' and 'eat until not hungry'
     - "Eat all stack" stops when 'stuffed'
-    - "Eat until not hungry" stops when player is not hungry but that doesn't mean player can't eat more.  
+    - "Eat until not hungry" stops when player is not hungry but that doesn't mean player can't eat more. Also works on 1 big item, eats partially, value is random between 0 and 15 (hungry).
+    - "Eat until stuffed" - eats items (or fractions of them) until player is 'stuffed'. Value is a bit random over the stuffed limit. 
 - Dropping painfully heavy crafting results so player wouldn't take too much damage.
     - Sawing logs for example
     - Doesn't conflict with auto-mechanics
