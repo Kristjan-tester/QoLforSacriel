@@ -7,6 +7,8 @@ local DeviceOffAction = ISBaseTimedAction:derive("QoLforSacriel_NearbyDeviceOffA
 local installed = false
 local DEFAULT_RANGE = 3
 local MAX_RANGE = 3
+local MAX_CONTAINER_DEPTH = 8
+local MAX_SCANNED_ITEMS = 500
 local MOD_OPTIONS_ID = "QoLforSacriel.Modules"
 local HOTKEY_OPTION_ID = "nearbyDeviceOffHotkey"
 
@@ -203,8 +205,24 @@ local function getNestedItemContainer(item)
     return nil
 end
 
-local function scanInventoryContainer(container, best, order)
-    if not container or not container.getItems then
+local function beginContainerScan(container, scanState, depth)
+    if scanState.itemLimitReached or not container or not container.getItems then
+        return false
+    end
+    if depth > MAX_CONTAINER_DEPTH then
+        scanState.depthLimitReached = true
+        return false
+    end
+    if scanState.visitedContainers[container] then
+        return false
+    end
+
+    scanState.visitedContainers[container] = true
+    return true
+end
+
+local function scanInventoryContainer(container, best, order, scanState, depth)
+    if not beginContainerScan(container, scanState, depth) then
         return best, order
     end
 
@@ -215,22 +233,28 @@ local function scanInventoryContainer(container, best, order)
 
     for index = 0, items:size() - 1 do
         local item = items:get(index)
+        scanState.scannedItems = scanState.scannedItems + 1
         order = order + 1
         local candidate = candidateForTarget(item, item, 1, 2, false, nil, 0, order)
         if candidate then
             best = addCandidate(best, candidate)
         end
 
+        if scanState.scannedItems >= MAX_SCANNED_ITEMS then
+            scanState.itemLimitReached = true
+            break
+        end
+
         local itemContainer = getNestedItemContainer(item)
         if itemContainer then
-            best, order = scanInventoryContainer(itemContainer, best, order)
+            best, order = scanInventoryContainer(itemContainer, best, order, scanState, depth + 1)
         end
     end
 
     return best, order
 end
 
-local function findInventoryCandidate(playerObj)
+local function findInventoryCandidate(playerObj, scanState)
     if not playerObj or not playerObj.getInventory then
         return nil
     end
@@ -240,11 +264,11 @@ local function findInventoryCandidate(playerObj)
         return nil
     end
 
-    return scanInventoryContainer(inventory, nil, 0)
+    return scanInventoryContainer(inventory, nil, 0, scanState, 0)
 end
 
-local function scanWorldContainer(container, square, distance, best, order)
-    if not container or not container.getItems then
+local function scanWorldContainer(container, square, distance, best, order, scanState, depth)
+    if not beginContainerScan(container, scanState, depth) then
         return best, order
     end
 
@@ -255,15 +279,21 @@ local function scanWorldContainer(container, square, distance, best, order)
 
     for index = 0, items:size() - 1 do
         local item = items:get(index)
+        scanState.scannedItems = scanState.scannedItems + 1
         order = order + 1
         local candidate = candidateForTarget(item, item, 3, 4, true, square, distance, order)
         if candidate then
             best = addCandidate(best, candidate)
         end
 
+        if scanState.scannedItems >= MAX_SCANNED_ITEMS then
+            scanState.itemLimitReached = true
+            break
+        end
+
         local itemContainer = getNestedItemContainer(item)
         if itemContainer then
-            best, order = scanWorldContainer(itemContainer, square, distance, best, order)
+            best, order = scanWorldContainer(itemContainer, square, distance, best, order, scanState, depth + 1)
         end
     end
 
@@ -287,7 +317,21 @@ local function getWorldTarget(object)
     return object, object
 end
 
-local function findWorldCandidate(playerObj, settings)
+local function scanObjectContents(object, target, square, distance, best, order, scanState)
+    local targetContainer = getNestedItemContainer(target)
+    if targetContainer then
+        return scanWorldContainer(targetContainer, square, distance, best, order, scanState, 0)
+    end
+
+    local objectContainer = getObjectContainer(object)
+    if objectContainer then
+        return scanWorldContainer(objectContainer, square, distance, best, order, scanState, 0)
+    end
+
+    return best, order
+end
+
+local function findWorldCandidate(playerObj, settings, scanState)
     local playerSquare = playerObj and playerObj:getSquare()
     if not playerSquare then
         return nil
@@ -318,9 +362,8 @@ local function findWorldCandidate(playerObj, settings)
                             end
                         end
 
-                        local container = getObjectContainer(object)
-                        if container then
-                            best, order = scanWorldContainer(container, square, distance, best, order)
+                        if target then
+                            best, order = scanObjectContents(object, target, square, distance, best, order, scanState)
                         end
                     end
                 end
@@ -464,9 +507,23 @@ local function runCommand(playerObj, source, settings, logger)
         return
     end
 
-    local candidate = findInventoryCandidate(playerObj)
+    local scanState = {
+        visitedContainers = {},
+        scannedItems = 0,
+        itemLimitReached = false,
+        depthLimitReached = false,
+    }
+    local candidate = findInventoryCandidate(playerObj, scanState)
     if not candidate then
-        candidate = findWorldCandidate(playerObj, settings)
+        candidate = findWorldCandidate(playerObj, settings, scanState)
+    end
+
+    if (scanState.itemLimitReached or scanState.depthLimitReached) and logger and logger.debug then
+        logger.debug(
+            "NearbyDeviceOff: scan limit reached | items=" .. tostring(scanState.scannedItems)
+                .. " | itemLimit=" .. tostring(scanState.itemLimitReached)
+                .. " | depthLimit=" .. tostring(scanState.depthLimitReached)
+        )
     end
 
     if not candidate then
