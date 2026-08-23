@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.21 
+Current version: v0.22 
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -14,6 +14,18 @@ Current version: v0.21
 	- Made for single-player. Not tested in multiplayer.
  
 Features:
+
+- (NEW) Heat retention:
+	- Wood stoves, fireplaces, metal drum ovens - now retain heat for a time after fuel runs out
+ 	- maximum charge with 6 hour burn time, heat drops off over time up to maximum on 18 hours.
+  	- Charge build-up and discharge is depending on outside temp
+  	- Does not change fireplace behaviour for heating radius or room handling.
+  	- Does not retain it through quit+load, but works with chunks unloading
+
+- (NEW) Auto-Drink Extended
+	- enable specific containers for auto-drinking any safe liquid (or mix of them)
+ 	- Does not drink alcohol or tainted water, acid, bleach, etc.
+  	- Falls back to vanilla auto-drink if nothing found
 
 - (NEW) Foraging panel:
 	- Updated Radius tooltip to include all relevant factors (that vanilla doesn't show)
@@ -100,6 +112,7 @@ Features:
 - Dropping painfully heavy crafting results so player wouldn't take too much damage.
     - Sawing logs for example
     - Doesn't conflict with auto-mechanics
+-  Getting heavy items from ground via "Gardening" now has 2 options - "equip" or "to inventory"
 
 
 
