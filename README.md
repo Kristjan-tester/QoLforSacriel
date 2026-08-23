@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.22 
+Current version: v0.23 
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -105,6 +105,7 @@ Features:
 - Handcrafting menu extended with tool selection submenus
     - Populates the context menu with all available tools for that craft, respects 'don't use for crafting' flags
 - "Take all rotten" and "take all stale" from container (right-click in that container)
+- (NEW) Dismantling world objects (doors, furniture, etc.) progress is saved and can be resumed later
 - (UPDATED) Extended EAT menu to have 'eat all stack' and 'eat until not hungry'
     - "Eat all stack" stops when 'stuffed'
     - "Eat until not hungry" stops when player is not hungry but that doesn't mean player can't eat more. Also works on 1 big item, eats partially, value is random between 0 and 15 (hungry).
