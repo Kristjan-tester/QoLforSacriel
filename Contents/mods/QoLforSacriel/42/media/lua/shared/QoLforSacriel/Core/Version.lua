@@ -1,6 +1,6 @@
 -- ff-assisted
 QoLforSacriel_Version = {
-    runtime = "qolfs-phase4-2026-08-21-eat-stack-hungry-stop-v281"
+    runtime = "qolfs-hearth-object-lifecycle-2026-08-23-v316"
 }
 
 return QoLforSacriel_Version
