@@ -120,6 +120,7 @@ local defaults = {
     QoLforSacriel_ArmorMood_UpdateCooldownSeconds = 2,
 
     QoLforSacriel_EnableSafeBeverageAutoDrink = true,
+    QoLforSacriel_EnableDismantleProgress = true,
     QoLforSacriel_EnableHearthRetainedHeat = true,
     QoLforSacriel_HearthRetainedHeat_MaxBurnCapacityHours = 6,
     QoLforSacriel_HearthRetainedHeat_MaxRetentionHours = 18,
@@ -215,6 +216,7 @@ local MOD_OPTION_KEY_BY_SETTING = {
     QoLforSacriel_ArmorMood_BaseReductionFactor = "armorMoodBaseReductionFactor",
     QoLforSacriel_ArmorMood_UpdateCooldownSeconds = "armorMoodUpdateCooldownSeconds",
     QoLforSacriel_EnableSafeBeverageAutoDrink = "enableSafeBeverageAutoDrink",
+    QoLforSacriel_EnableDismantleProgress = "enableDismantleProgress",
     QoLforSacriel_EnableHearthRetainedHeat = "enableHearthRetainedHeat",
     QoLforSacriel_HearthRetainedHeat_MaxBurnCapacityHours = "hearthRetainedHeatMaxBurnCapacityHours",
     QoLforSacriel_HearthRetainedHeat_MaxRetentionHours = "hearthRetainedHeatMaxRetentionHours",
