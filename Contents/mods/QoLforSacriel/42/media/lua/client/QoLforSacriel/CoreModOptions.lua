@@ -589,6 +589,10 @@ function CoreModOptions.register(logger)
     options:addTickBox("enableGroundCoverRemovalMenu", "UI_QoLforSacriel_Modules_EnableGroundCoverRemovalMenu", true, "UI_QoLforSacriel_Modules_EnableGroundCoverRemovalMenu_Tooltip")
 
     options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_DismantleProgressTitle")
+    options:addTickBox("enableDismantleProgress", "UI_QoLforSacriel_Modules_EnableDismantleProgress", true, "UI_QoLforSacriel_Modules_EnableDismantleProgress_Tooltip")
+
+    options:addSeparator()
     options:addTitle("UI_QoLforSacriel_Modules_SafeBeverageAutoDrinkTitle")
     options:addTickBox("enableSafeBeverageAutoDrink", "UI_QoLforSacriel_Modules_EnableSafeBeverageAutoDrink", false, "UI_QoLforSacriel_Modules_EnableSafeBeverageAutoDrink_Tooltip")
 

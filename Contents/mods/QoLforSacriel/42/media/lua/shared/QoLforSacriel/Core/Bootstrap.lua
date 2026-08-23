@@ -52,6 +52,7 @@ local function registerModules()
     local equipmentPresets = safeRequire("QoLforSacriel/Modules/Equipment/EquipmentPresets")
     local armorMood = safeRequire("QoLforSacriel/Modules/ArmorMood/ArmorMoodBase")
     local safeBeverageAutoDrink = safeRequire("QoLforSacriel/Modules/SafeBeverageAutoDrink/SafeBeverageAutoDrink")
+    local dismantleProgress = safeRequire("QoLforSacriel/Modules/DismantleProgress/DismantleProgress")
     local hearthRetainedHeat = safeRequire("QoLforSacriel/Modules/HearthRetainedHeat/HearthRetainedHeat")
 
     if skillFilter and skillFilter.init then
@@ -140,6 +141,9 @@ local function registerModules()
     end
     if safeBeverageAutoDrink and safeBeverageAutoDrink.init then
         registry.register("SafeBeverageAutoDrink.Base", "QoLforSacriel_EnableSafeBeverageAutoDrink", safeBeverageAutoDrink.init)
+    end
+    if dismantleProgress and dismantleProgress.init then
+        registry.register("DismantleProgress.Base", "QoLforSacriel_EnableDismantleProgress", dismantleProgress.init)
     end
     if hearthRetainedHeat and hearthRetainedHeat.init then
         registry.register("HearthRetainedHeat.Base", "QoLforSacriel_EnableHearthRetainedHeat", hearthRetainedHeat.init)
