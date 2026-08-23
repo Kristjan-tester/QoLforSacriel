@@ -34,6 +34,7 @@ local function registerModules()
     local washAllOrder = safeRequire("QoLforSacriel/Modules/UIFixes/WashAllOrder")
     local fishingNearbyLures = safeRequire("QoLforSacriel/Modules/UIFixes/FishingNearbyLures")
     local heldItemContainerMenu = safeRequire("QoLforSacriel/Modules/UIFixes/HeldItemContainerMenu")
+    local groundCoverRemovalMenu = safeRequire("QoLforSacriel/Modules/UIFixes/GroundCoverRemovalMenu")
     local foragingRefinement = safeRequire("QoLforSacriel/Modules/ForagingRefinement/ForagingRefinement")
     local foragingClothingPenaltyFix = safeRequire("QoLforSacriel/Modules/ForagingClothingPenaltyFix/ForagingClothingPenaltyFix")
     local organizedInventory = safeRequire("QoLforSacriel/Modules/OrganizedInventory/OrganizedInventory")
@@ -50,6 +51,8 @@ local function registerModules()
     local restSleep = safeRequire("QoLforSacriel/Modules/RestSleep/RestUntilSleepy")
     local equipmentPresets = safeRequire("QoLforSacriel/Modules/Equipment/EquipmentPresets")
     local armorMood = safeRequire("QoLforSacriel/Modules/ArmorMood/ArmorMoodBase")
+    local safeBeverageAutoDrink = safeRequire("QoLforSacriel/Modules/SafeBeverageAutoDrink/SafeBeverageAutoDrink")
+    local hearthRetainedHeat = safeRequire("QoLforSacriel/Modules/HearthRetainedHeat/HearthRetainedHeat")
 
     if skillFilter and skillFilter.init then
         registry.register("UIFixes.SkillFilter", "QoLforSacriel_EnableUIFixes", skillFilter.init)
@@ -83,6 +86,9 @@ local function registerModules()
     end
     if heldItemContainerMenu and heldItemContainerMenu.init then
         registry.register("UIFixes.HeldItemContainerMenu", "QoLforSacriel_EnableUIFixes", heldItemContainerMenu.init)
+    end
+    if groundCoverRemovalMenu and groundCoverRemovalMenu.init then
+        registry.register("UIFixes.GroundCoverRemovalMenu", "QoLforSacriel_EnableUIFixes", groundCoverRemovalMenu.init)
     end
     if foragingRefinement and foragingRefinement.init then
         registry.register("ForagingRefinement.Base", "QoLforSacriel_EnableForagingRefinement", foragingRefinement.init)
@@ -131,6 +137,12 @@ local function registerModules()
     end
     if armorMood and armorMood.init then
         registry.register("ArmorMood.Base", "QoLforSacriel_EnableArmorMood", armorMood.init)
+    end
+    if safeBeverageAutoDrink and safeBeverageAutoDrink.init then
+        registry.register("SafeBeverageAutoDrink.Base", "QoLforSacriel_EnableSafeBeverageAutoDrink", safeBeverageAutoDrink.init)
+    end
+    if hearthRetainedHeat and hearthRetainedHeat.init then
+        registry.register("HearthRetainedHeat.Base", "QoLforSacriel_EnableHearthRetainedHeat", hearthRetainedHeat.init)
     end
 end
 

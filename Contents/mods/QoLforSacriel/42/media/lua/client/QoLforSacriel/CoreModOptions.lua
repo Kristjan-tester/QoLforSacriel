@@ -584,6 +584,53 @@ function CoreModOptions.register(logger)
     options:addTextEntry("armorMoodBaseReductionFactor", "UI_QoLforSacriel_Modules_ArmorMoodBaseReductionFactor", "0.95", "UI_QoLforSacriel_Modules_ArmorMoodBaseReductionFactor_Tooltip")
     options:addTextEntry("armorMoodUpdateCooldownSeconds", "UI_QoLforSacriel_Modules_ArmorMoodUpdateCooldownSeconds", "2", "UI_QoLforSacriel_Modules_ArmorMoodUpdateCooldownSeconds_Tooltip")
 
+    options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_GroundCoverRemovalMenuTitle")
+    options:addTickBox("enableGroundCoverRemovalMenu", "UI_QoLforSacriel_Modules_EnableGroundCoverRemovalMenu", true, "UI_QoLforSacriel_Modules_EnableGroundCoverRemovalMenu_Tooltip")
+
+    options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_SafeBeverageAutoDrinkTitle")
+    options:addTickBox("enableSafeBeverageAutoDrink", "UI_QoLforSacriel_Modules_EnableSafeBeverageAutoDrink", false, "UI_QoLforSacriel_Modules_EnableSafeBeverageAutoDrink_Tooltip")
+
+    options:addSeparator()
+    options:addTitle("UI_QoLforSacriel_Modules_HearthRetainedHeatTitle")
+    options:addTickBox("enableHearthRetainedHeat", "UI_QoLforSacriel_Modules_EnableHearthRetainedHeat", true, "UI_QoLforSacriel_Modules_EnableHearthRetainedHeat_Tooltip")
+    local hearthBurnCapacityOption = options:addComboBox("hearthRetainedHeatMaxBurnCapacityHours", "UI_QoLforSacriel_Modules_HearthRetainedHeatMaxBurnCapacityHours", "UI_QoLforSacriel_Modules_HearthRetainedHeatMaxBurnCapacityHours_Tooltip")
+    for hours = 1, 8 do
+        hearthBurnCapacityOption:addItem("UI_QoLforSacriel_Modules_HearthRetainedHeatHours_" .. tostring(hours), hours == 4)
+    end
+    local getHearthBurnCapacityOptionValue = hearthBurnCapacityOption.getValue
+    hearthBurnCapacityOption.getValue = function(self)
+        local legacyValue = tonumber(self.value)
+        if legacyValue and self.selected == 4 and legacyValue >= 1 and legacyValue <= 8 then
+            self.selected = legacyValue
+            if self.element ~= nil then
+                self.element.selected = legacyValue
+            end
+            self.value = nil
+        end
+        return getHearthBurnCapacityOptionValue(self)
+    end
+
+    local hearthRetentionOption = options:addComboBox("hearthRetainedHeatMaxRetentionHours", "UI_QoLforSacriel_Modules_HearthRetainedHeatMaxRetentionHours", "UI_QoLforSacriel_Modules_HearthRetainedHeatMaxRetentionHours_Tooltip")
+    for hours = 12, 36 do
+        hearthRetentionOption:addItem("UI_QoLforSacriel_Modules_HearthRetainedHeatHours_" .. tostring(hours), hours == 24)
+    end
+    local getHearthRetentionOptionValue = hearthRetentionOption.getValue
+    hearthRetentionOption.getValue = function(self)
+        local legacyValue = tonumber(self.value)
+        if legacyValue and self.selected == 13 and legacyValue >= 12 and legacyValue <= 36 then
+            self.selected = legacyValue - 11
+            if self.element ~= nil then
+                self.element.selected = self.selected
+            end
+            self.value = nil
+        end
+        return tonumber(getHearthRetentionOptionValue(self)) + 11
+    end
+
+    options:addTextEntry("hearthRetainedHeatOutsideTempBaseRatioPercent", "UI_QoLforSacriel_Modules_HearthRetainedHeatOutsideTempBaseRatioPercent", "30", "UI_QoLforSacriel_Modules_HearthRetainedHeatOutsideTempBaseRatioPercent_Tooltip")
+
     attachApplySync(options, logger)
     syncAllBindings(options, logger)
 

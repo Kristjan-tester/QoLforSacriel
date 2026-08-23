@@ -49,6 +49,7 @@ local defaults = {
     QoLforSacriel_UIFixes_EnableWashAllBloodiestFirst = true,
     QoLforSacriel_UIFixes_EnableFishingNearbyLures = true,
     QoLforSacriel_UIFixes_EnableHeldItemPutInContainer = true,
+    QoLforSacriel_UIFixes_EnableGroundCoverRemovalMenu = true,
     QoLforSacriel_UIFixes_EnableSoundDirection = false,
     QoLforSacriel_UIFixes_EnableNoiseRadius = false,
     QoLforSacriel_UIFixes_WaterDepthHints_OverlayRadius = 3,
@@ -117,6 +118,12 @@ local defaults = {
 
     QoLforSacriel_ArmorMood_BaseReductionFactor = 0.95,
     QoLforSacriel_ArmorMood_UpdateCooldownSeconds = 2,
+
+    QoLforSacriel_EnableSafeBeverageAutoDrink = true,
+    QoLforSacriel_EnableHearthRetainedHeat = true,
+    QoLforSacriel_HearthRetainedHeat_MaxBurnCapacityHours = 6,
+    QoLforSacriel_HearthRetainedHeat_MaxRetentionHours = 18,
+    QoLforSacriel_HearthRetainedHeat_OutsideTempBaseRatioPercent = 30,
 }
 
 local MOD_OPTION_KEY_BY_SETTING = {
@@ -150,6 +157,7 @@ local MOD_OPTION_KEY_BY_SETTING = {
     QoLforSacriel_UIFixes_EnableWashAllBloodiestFirst = "enableWashAllBloodiestFirst",
     QoLforSacriel_UIFixes_EnableFishingNearbyLures = "enableFishingNearbyLures",
     QoLforSacriel_UIFixes_EnableHeldItemPutInContainer = "enableHeldItemPutInContainer",
+    QoLforSacriel_UIFixes_EnableGroundCoverRemovalMenu = "enableGroundCoverRemovalMenu",
     QoLforSacriel_UIFixes_WaterDepthHints_OverlayRadius = "waterDepthOverlayRadius",
     QoLforSacriel_UIFixes_WaterDepthHints_ShowLitersAboveForaging3 = "waterDepthShowLitersAboveForaging3",
     QoLforSacriel_UIFixes_WaterDepthHints_ShallowMinWaterCount = "waterDepthShallowMinWaterCount",
@@ -206,6 +214,11 @@ local MOD_OPTION_KEY_BY_SETTING = {
     QoLforSacriel_EnableArmorMood = "enableArmorMood",
     QoLforSacriel_ArmorMood_BaseReductionFactor = "armorMoodBaseReductionFactor",
     QoLforSacriel_ArmorMood_UpdateCooldownSeconds = "armorMoodUpdateCooldownSeconds",
+    QoLforSacriel_EnableSafeBeverageAutoDrink = "enableSafeBeverageAutoDrink",
+    QoLforSacriel_EnableHearthRetainedHeat = "enableHearthRetainedHeat",
+    QoLforSacriel_HearthRetainedHeat_MaxBurnCapacityHours = "hearthRetainedHeatMaxBurnCapacityHours",
+    QoLforSacriel_HearthRetainedHeat_MaxRetentionHours = "hearthRetainedHeatMaxRetentionHours",
+    QoLforSacriel_HearthRetainedHeat_OutsideTempBaseRatioPercent = "hearthRetainedHeatOutsideTempBaseRatioPercent",
 }
 
 local function getModOptionValue(name)
