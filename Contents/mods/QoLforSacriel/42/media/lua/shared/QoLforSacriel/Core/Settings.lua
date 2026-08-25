@@ -109,6 +109,7 @@ local defaults = {
     QoLforSacriel_FurnitureNudge_BlockOnRugs = false,
     QoLforSacriel_FurnitureNudge_AllowMultiTile = true,
     QoLforSacriel_FurnitureNudge_IgnoreToolRequirements = true,
+    QoLforSacriel_FurnitureNudge_KeepInventoryExperimental = true,
 
     QoLforSacriel_LightSwitchToggle_Hotkey = "F",
     QoLforSacriel_LightSwitchToggle_Range = 1,
@@ -201,6 +202,7 @@ local MOD_OPTION_KEY_BY_SETTING = {
     QoLforSacriel_FurnitureNudge_BlockOnRugs = "furnitureNudgeBlockOnRugs",
     QoLforSacriel_FurnitureNudge_AllowMultiTile = "furnitureNudgeAllowMultiTile",
     QoLforSacriel_FurnitureNudge_IgnoreToolRequirements = "furnitureNudgeIgnoreToolRequirements",
+    QoLforSacriel_FurnitureNudge_KeepInventoryExperimental = "furnitureNudgeKeepInventoryExperimental",
     QoLforSacriel_EnableLightSwitchToggle = "enableLightSwitchToggle",
     QoLforSacriel_LightSwitchToggle_Hotkey = "lightSwitchToggleHotkey",
     QoLforSacriel_LightSwitchToggle_Range = "lightSwitchToggleRange",

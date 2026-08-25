@@ -1,3 +1,4 @@
+-- ff-assisted
 local FurnitureNudgeContext = {}
 
 local installed = false
@@ -40,6 +41,42 @@ local function getDisableReasonTooltip(candidate)
         return "UI_QoLforSacriel_FurnitureNudgeMultiTileDisabled", "multi-tile furniture cannot be nudged"
     end
     if candidate.disableReason == rules.CANDIDATE_REASON_HAS_CONTENTS then
+        local containerReason = tostring(candidate.containerReason or "")
+        if containerReason == "unexplored" then
+            return "UI_QoLforSacriel_FurnitureNudgeUnexplored", "search this container before nudging"
+        end
+        if containerReason == "option_disabled" then
+            return "UI_QoLforSacriel_FurnitureNudgeKeepInventoryDisabled", "enable Experimental: Keep Furniture Inventory or empty this furniture"
+        end
+        if string.sub(containerReason, 1, 16) == "appliance_state[" then
+            return "UI_QoLforSacriel_FurnitureNudgeApplianceState", "turn off the appliance and wait for residual heat to clear; timed ovens must also have no timer"
+        end
+        if containerReason == "multiplayer" then
+            return "UI_QoLforSacriel_FurnitureNudgeSinglePlayerOnly", "keeping furniture inventory is available in single-player only"
+        end
+        if containerReason == "missing_object" then
+            return "UI_QoLforSacriel_FurnitureNudgeCannotVerify", "the furniture state could not be verified"
+        end
+        if containerReason == "incomplete_members"
+        or containerReason == "force_single_item_grid"
+        then
+            return "UI_QoLforSacriel_FurnitureNudgeCompoundUnsupported", "this compound furniture cannot safely keep its inventory while nudging"
+        end
+        if containerReason == "fluid_container" then
+            return "UI_QoLforSacriel_FurnitureNudgeFluidAndItemsUnsupported", "furniture combining fluid and item storage cannot be nudged safely"
+        end
+        if containerReason == "unsupported_shape" then
+            return "UI_QoLforSacriel_FurnitureNudgeUnsupportedType", "this furniture type cannot keep its inventory while nudging"
+        end
+        if containerReason == "iso_type"
+        or containerReason == "specialized_class"
+        or containerReason == "sprite_properties"
+        or containerReason == "container_type"
+        or string.sub(containerReason, 1, 10) == "component["
+        or string.sub(containerReason, 1, 9) == "mod_data["
+        then
+            return "UI_QoLforSacriel_FurnitureNudgeStatefulUnsupported", "this furniture has state that cannot be preserved safely"
+        end
         return "UI_QoLforSacriel_FurnitureNudgeHasContents", "empty furniture before nudging"
     end
     if candidate.disableReason == rules.CANDIDATE_REASON_PARALLEL_WALL then

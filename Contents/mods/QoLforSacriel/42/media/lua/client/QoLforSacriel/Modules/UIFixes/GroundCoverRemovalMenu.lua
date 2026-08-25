@@ -9,9 +9,15 @@ local settingsRef = nil
 local loggerRef = nil
 
 local ITEM_TYPE_BY_CUSTOM_NAME = {
+    FlatStone = "Base.FlatStone",
     Log = "Base.Log",
     TreeBranch2 = "Base.TreeBranch2",
     LargeStone = "Base.LargeStone",
+    LargeStoneTwigs = "Base.LargeStone",
+}
+
+local ITEM_TYPE_BY_SPRITE_NAME = {
+    d_generic_1_23 = "Base.FlatStone",
 }
 
 local GroundCoverPickupEquipAction = ISPickUpGroundCoverItem:derive("QoLforSacriel_GroundCoverPickupEquipAction")
@@ -58,6 +64,10 @@ local function resolveItemType(object)
     end
 
     local sprite = object:getSprite()
+    local spriteName = sprite and sprite:getName() or nil
+    if spriteName and ITEM_TYPE_BY_SPRITE_NAME[spriteName] then
+        return ITEM_TYPE_BY_SPRITE_NAME[spriteName]
+    end
     local properties = sprite and sprite:getProperties() or nil
     if not properties or not properties:has("CustomName") then
         return nil

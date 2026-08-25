@@ -1,3 +1,4 @@
+-- ff-assisted
 local RestUntilSleepy = {}
 
 local installed = false
@@ -327,13 +328,30 @@ local function getBedLabel(playerObj, candidate)
     local pillowLabel = pillow
         and getTextSafe("UI_QoLforSacriel_SleepNearestBed_PillowYes", "Pillow: yes")
         or getTextSafe("UI_QoLforSacriel_SleepNearestBed_PillowNo", "Pillow: no")
+    local distanceLabel = getTextSafe("UI_QoLforSacriel_SleepNearestBed_Distance", "tiles")
     return qualityLabel
         .. " | " .. pillowLabel
-        .. " | " .. string.format(getTextSafe("UI_QoLforSacriel_SleepNearestBed_Distance", "%.1f tiles"), math.sqrt(candidate.distanceSquared))
+        .. " | " .. string.format("%.1f %s", math.sqrt(candidate.distanceSquared), distanceLabel)
 end
 
-local function isBadBedQuality(quality)
-    return type(quality) == "string" and string.find(quality, "badBed", 1, true) ~= nil
+local function isEligibleBedObject(bed, quality)
+    if not bed or type(quality) ~= "string" then
+        return false
+    end
+
+    local properties = bed.getProperties and bed:getProperties() or nil
+    if not properties or not properties:has("BedType") then
+        return false
+    end
+
+    local declaredQuality = tostring(properties:get("BedType") or "")
+    if declaredQuality ~= "averageBed" and declaredQuality ~= "goodBed" then
+        return false
+    end
+
+    local baseQuality = string.gsub(quality, "Pillow", "")
+    return baseQuality == "averageBed"
+        or baseQuality == "goodBed"
 end
 
 local function findNearbyBeds(playerObj)
@@ -359,12 +377,15 @@ local function findNearbyBeds(playerObj)
                 seen[key] = true
                 local qualityOk, quality = pcall(ISWorldObjectContextMenu.getBedQuality, playerObj, bed)
                 local bedQuality = qualityOk and tostring(quality) or nil
-                if not isBadBedQuality(bedQuality) then
+                local distanceSquared = (x - playerX) * (x - playerX) + (y - playerY) * (y - playerY)
+                if distanceSquared <= NEARBY_BED_RADIUS * NEARBY_BED_RADIUS
+                and isEligibleBedObject(bed, bedQuality)
+                then
                     order = order + 1
                     table.insert(candidates, {
                         bed = bed,
                         quality = bedQuality,
-                        distanceSquared = (x - playerX) * (x - playerX) + (y - playerY) * (y - playerY),
+                        distanceSquared = distanceSquared,
                         x = x,
                         y = y,
                         order = order,
