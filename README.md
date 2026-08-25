@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.23 
+Current version: v0.24 
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -91,8 +91,9 @@ Features:
 - Armour discomfort reduction (95%) when not doing complex actions (running, climbing, building stuff) or sleeping/resting
 	- Respects vanilla discomfort cap (sum of all worn items)
 - Find deeper natural water sources in foraging mode (choose target 'water')
-- Nudge furniture by 1 tile, can nudge multi-tile items and ignore tool/skill requirements:
-    - Items have to be removed from containers before nudge. 
+- (UPDATE) Nudge furniture by 1 tile,
+	- can nudge multi-tile items and ignore tool/skill requirements
+    - Most containers do not need to be emptied first 
 - Nearby light switch toggle with key-bind (default: ctrl+f) should help out when looking for obscured switches in the dark
     - range, default 1 tile radius, customisable
 - Heavy load pain reaction means character cries out in pain when over-encumbered so that it causes loss of health.
