@@ -2,7 +2,7 @@ Make life better for playing Project Zomboid.
 
 Link to steam workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3774739161
 
-Current version: v0.24 
+Current version: v0.25 
 
 - Why we are doing this?
 	- These mods are designed increase Quality of Life by removing unnecessary steps from player actions so they can maintain situational awareness in the game.
@@ -50,7 +50,8 @@ Features:
 - Towels take linear amount of water - 1 towel is enough now to dry yourself.
 - Improve entering car, character will reorient themselves when close to door
 - (NEW) Sleep in nearest bed - looks for beds (above bad quality) in 3 tile radios, and when selected walks to them and starts sleeping. Only shown when player can sleep.
-- (UPDATED) Fitness tab in Info panel - indicate weight gain in detail, strength training xp, etc.
+- (UPDATED) Fitness tab in Info panel - indicate weight gain/loss, strength training xp, etc.
+ 	- Detailed fitness stats show in tooltip only for "nutritionist" trait
 	- Shows basic 'score' of sleep and wake up reason, and general contributing factors. Score is compared to current character 'normal' state.
  	- 'Exact sleep stats' can be enabled from mod options, default off.
   	- Vanilla code is not fully transparent, some wake up actions happen within java with no exposure to lua so can't detect them all, yet.
