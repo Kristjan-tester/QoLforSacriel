@@ -2,11 +2,15 @@ require "XpSystem/ISUI/ISCharacterInfoWindow"
 require "XpSystem/ISUI/ISHealthPanel"
 require "ISUI/ISPanel"
 require "ISUI/ISButton"
+require "ISUI/ISToolTip"
+
+local SleepStructuralSnapshot = require "QoLforSacriel/Modules/UIFixes/SleepStructuralSnapshot"
 
 -- ff-assisted
 
 local FitnessNutritionIndicator = {}
 local FitnessNutritionPanel = ISPanel:derive("FitnessNutritionPanel")
+local NutritionBalanceHover = ISPanel:derive("QoLforSacriel_NutritionBalanceHover")
 
 local BALANCE_CELL_COUNT = 10
 local BALANCE_CELL_WIDTH = 18
@@ -15,11 +19,16 @@ local UI_BORDER_SPACING = 10
 local STRENGTH_PROTEIN_NEAR_BONUS_MIN = 1
 local MIN_CALORIES = -2200
 local MAX_CALORIES = 3700
+local GAME_SECONDS_PER_DAY = 24 * 60 * 60
+local WEIGHT_GAIN_PER_GAME_SECOND = 0.000013
+local WEIGHT_LOSS_PER_GAME_SECOND = 0.0000085
 local FITNESS_PANEL_INITIAL_HEIGHT = 250
 local FATIGUE_ONSET_EPSILON = 0.0001
 local FONT_HGT_SMALL = getTextManager():getFontHeight(UIFont.Small)
 local LAST_SLEEP_SESSION_KEY = "QoLforSacriel.SleepQuality.LastSession"
 local LAST_SLEEP_SESSION_SCHEMA = 5
+local MAX_STRUCTURAL_SCAN_LOOKUPS = 25000
+local STRUCTURAL_COVERAGE_SAMPLE_LIMIT = 16
 
 local installed = false
 local originalCreateChildren = nil
@@ -34,6 +43,8 @@ local sleepDialogWrapped = false
 local contextSleepWrapped = false
 local contextSleepCompleteWrapped = false
 local sleepWrapperRetryRegistered = false
+local structuralSessionSequence = 0
+local structuralCapabilityLogged = false
 
 local function getTextSafe(key, fallback)
     local value = getTextOrNull and getTextOrNull(key) or nil
@@ -48,6 +59,43 @@ local function logDebug(message)
         and loggerRef.debug
     then
         loggerRef.debug("UIFixes.FitnessNutritionIndicator: " .. message)
+    end
+end
+
+local function isDebugLoggingEnabled()
+    return runtimeSettings
+        and runtimeSettings.get
+        and runtimeSettings.get("QoLforSacriel_DebugLogs") == true
+        and loggerRef
+        and loggerRef.debug
+end
+
+local function sanitizeStructuralValue(value)
+    if value == nil then return "nil" end
+    local text = tostring(value)
+    text = string.gsub(text, "[\r\n]", " ")
+    text = string.gsub(text, ";", ",")
+    text = string.gsub(text, "=", ":")
+    return text
+end
+
+local function logStructuralEvent(sessionId, playerNum, eventName, fields)
+    if not isDebugLoggingEnabled() then return end
+    local parts = {
+        "SLEEP_STRUCT event=" .. sanitizeStructuralValue(eventName),
+        "sid=" .. sanitizeStructuralValue(sessionId),
+        "player=" .. sanitizeStructuralValue(playerNum),
+    }
+    for _, pair in ipairs(fields or {}) do
+        table.insert(parts, sanitizeStructuralValue(pair[1]) .. "=" .. sanitizeStructuralValue(pair[2]))
+    end
+    logDebug(table.concat(parts, "; "))
+end
+
+local function structuralEmitter(sessionId, playerNum)
+    if not isDebugLoggingEnabled() then return nil end
+    return function(eventName, fields)
+        logStructuralEvent(sessionId, playerNum, eventName, fields)
     end
 end
 
@@ -74,7 +122,7 @@ local function isEnabled()
     return runtimeSettings
         and runtimeSettings.isEnabled
         and runtimeSettings.isEnabled("QoLforSacriel_EnableUIFixes") == true
-        and runtimeSettings.get("QoLforSacriel_UIFixes_EnableFitnessNutritionIndicator") == true
+    and runtimeSettings.isEnabled("QoLforSacriel_UIFixes_EnableFitnessNutritionIndicator") == true
 end
 
 local function showExactSleepStats()
@@ -206,9 +254,7 @@ local function classifyWakeReason(session)
     local evidence = session.wakeEvidence or {}
     local previous = evidence.lastAsleep or evidence.start
     local wake = evidence.firstWake
-    if not previous or not wake then
-        return nil, "Unavailable"
-    end
+    if not previous or not wake then return nil, "Unavailable", nil end
     local panicDelta = wake.panic - previous.panic
     local stressDelta = wake.stress - previous.stress
     local earlyWake = session.requestedHours and session.actualHours < session.requestedHours - 0.1
@@ -216,28 +262,35 @@ local function classifyWakeReason(session)
     local heatWake = earlyWake and evidence.hyperthermiaThresholdRise and wake.hyperthermia >= 3
     local eventSignature = earlyWake and panicDelta >= 70
     local zombieEvidence = previous.veryCloseZombies > 0
+    local structural = evidence.structural or {}
+    local structuralWake = earlyWake
+        and structural.breach == true
+        and (structural.status == "complete" or structural.status == "incomplete")
     if coldWake and heatWake then
         logDebug("simultaneous cold and heat wake evidence; using Cold to match vanilla temperature check order")
     end
     if coldWake then
-        return "Cold", "Inferred"
+        return "Cold", "Inferred", structuralWake and "Cold" or nil
     end
     if heatWake then
-        return "Heat", "Inferred"
+        return "Heat", "Inferred", structuralWake and "Heat" or nil
     end
     if eventSignature and zombieEvidence then
-        return "Zombie", "Inferred"
+        return "Zombie", "Inferred", structuralWake and "Zombie" or nil
     end
     if eventSignature then
-        return "Nightmare", "Inferred"
+        return "Nightmare", "Inferred", structuralWake and "Nightmare" or nil
+    end
+    if structuralWake then
+        return "StructuralBreach", "Inferred", nil
     end
     if earlyWake then
-        return "Alarm", "Inferred"
+        return "Alarm", "Inferred", nil
     end
     if session.requestedHours and math.abs(session.actualHours - session.requestedHours) <= 0.1 then
-        return "Normal", "Scheduled"
+        return "Normal", "Scheduled", nil
     end
-    return nil, "Unavailable"
+    return nil, "Unavailable", nil
 end
 
 local function wasWokenEarly(session)
@@ -292,6 +345,17 @@ end
 
 local function getSleepSession(playerObj)
     return sleepSessions[playerObj:getPlayerNum() or 0]
+end
+
+local function discardSleepSession(playerNum, reason)
+    local session = sleepSessions[playerNum]
+    if session and session.structuralSessionId then
+        logStructuralEvent(session.structuralSessionId, playerNum, "CLEANUP", {
+            { "reason", reason }, { "captureStatus", session.structuralCaptureStatus },
+            { "hadSnapshot", session.structuralSnapshot ~= nil },
+        })
+    end
+    sleepSessions[playerNum] = nil
 end
 
 local function saveLastSleepSession(playerObj, session)
@@ -381,12 +445,72 @@ local function getSavedSleepSession(playerObj)
 end
 
 local function beginSleepSession(playerObj, requestedHours)
+    if not isEnabled() then
+        return
+    end
     local start = snapshotSleepStart(playerObj)
     if not start then
         return
     end
     start.fatigueTraitRateMultiplier = getFatigueTraitRateMultiplier(start)
     local playerNum = playerObj:getPlayerNum() or 0
+    if sleepSessions[playerNum] and sleepSessions[playerNum].active then
+        discardSleepSession(playerNum, "replacement")
+    end
+    structuralSessionSequence = structuralSessionSequence + 1
+    local structuralSessionId = "p" .. tostring(playerNum) .. "-s" .. tostring(structuralSessionSequence)
+    local emitStructural = structuralEmitter(structuralSessionId, playerNum)
+    local pendingStructuralEvents = nil
+    if emitStructural and not structuralCapabilityLogged then
+        pendingStructuralEvents = {}
+        emitStructural = function(eventName, fields)
+            table.insert(pendingStructuralEvents, { eventName = eventName, fields = fields })
+        end
+    end
+    local captureOptions = {
+        maxLookups = MAX_STRUCTURAL_SCAN_LOOKUPS,
+        sampleLimit = STRUCTURAL_COVERAGE_SAMPLE_LIMIT,
+        worldAge = start.worldAge,
+        emit = emitStructural,
+    }
+    local captureOk, structuralCapture = pcall(SleepStructuralSnapshot.capture, playerObj, captureOptions)
+    if not captureOk then
+        if emitStructural then
+            emitStructural("ERROR", {
+                { "stage", "capture" }, { "operation", "unexpected" }, { "key", nil }, { "error", structuralCapture },
+            })
+            emitStructural("CAPTURE_SKIP", {
+                { "status", "error" }, { "reason", "unexpected-error" },
+                { "candidateLookups", nil }, { "scanCap", MAX_STRUCTURAL_SCAN_LOOKUPS }, { "error", structuralCapture },
+            })
+        end
+        structuralCapture = { status = "error", reason = "unexpected-error" }
+    end
+    if not structuralCapabilityLogged
+        and structuralCapture.capabilities
+        and structuralCapture.status ~= "unavailable"
+        and structuralCapture.status ~= "capped"
+    then
+        structuralCapabilityLogged = true
+        local capabilities = structuralCapture.capabilities or {}
+        logStructuralEvent(structuralSessionId, playerNum, "CAPABILITY", {
+            { "supported", structuralCapture.status == "complete" or structuralCapture.status == "incomplete" },
+            { "playerSquare", capabilities.playerSquare == true }, { "squareBuilding", capabilities.squareBuilding == true },
+            { "buildingDef", capabilities.buildingDef == true }, { "buildingBounds", capabilities.buildingBounds == true },
+            { "cellSquare", capabilities.cellSquare == true }, { "objectList", capabilities.objectList == true },
+            { "typeChecks", capabilities.typeChecks == true }, { "objectSquare", capabilities.objectSquare == true },
+            { "health", capabilities.health == true }, { "maximumHealth", capabilities.maximumHealth == true },
+            { "destroyedState", capabilities.destroyedState == true }, { "orientation", capabilities.orientation == true },
+            { "spriteName", capabilities.spriteName == true }, { "barricadePlanks", capabilities.barricadePlanks == true },
+            { "barricadedTarget", capabilities.barricadedTarget == true }, { "failedApi", structuralCapture.failedApi },
+            { "error", structuralCapture.error or structuralCapture.reason },
+        })
+    end
+    if pendingStructuralEvents then
+        for _, pendingEvent in ipairs(pendingStructuralEvents) do
+            logStructuralEvent(structuralSessionId, playerNum, pendingEvent.eventName, pendingEvent.fields)
+        end
+    end
     sleepSessions[playerNum] = {
         active = true,
         requestedHours = tonumber(requestedHours),
@@ -398,6 +522,9 @@ local function beginSleepSession(playerObj, requestedHours)
         enduranceObserved = false,
         lastSampleWorldAge = start.worldAge,
         wakeEvidence = { start = snapshotWakeEvidence(playerObj) },
+        structuralSessionId = structuralSessionId,
+        structuralCaptureStatus = structuralCapture.status,
+        structuralSnapshot = structuralCapture.snapshot,
     }
     logDebug("sleep session started for player " .. tostring(playerNum) .. "; requested hours=" .. tostring(requestedHours))
     logSleepSnapshot("sleep start snapshot", start)
@@ -672,6 +799,45 @@ local function finaliseSleepSession(playerObj)
     session.finish = session.last
     session.wakeEvidence.firstWake = snapshotWakeEvidence(playerObj)
     session.actualHours = math.max(0, (session.finish.worldAge or 0) - (session.start.worldAge or 0))
+    if session.structuralSnapshot then
+        local compareOptions = {
+            captureStatus = session.structuralCaptureStatus,
+            actualHours = session.actualHours,
+            requestedHours = session.requestedHours,
+            earlyWake = wasWokenEarly(session) == true,
+            emit = structuralEmitter(session.structuralSessionId, playerObj:getPlayerNum() or 0),
+        }
+        local compareOk, structuralComparison = pcall(SleepStructuralSnapshot.compare, session.structuralSnapshot, compareOptions)
+        if not compareOk then
+            logStructuralEvent(session.structuralSessionId, playerObj:getPlayerNum() or 0, "ERROR", {
+                { "stage", "compare" }, { "operation", "unexpected" }, { "key", nil }, { "error", structuralComparison },
+            })
+            logStructuralEvent(session.structuralSessionId, playerObj:getPlayerNum() or 0, "COMPARE_SUMMARY", {
+                { "status", "error" }, { "elapsedMs", 0 }, { "comparedEntries", 0 },
+                { "unavailableEntries", 0 }, { "unchangedEntries", 0 }, { "partialDamageEntries", 0 },
+                { "ambiguousEntries", 0 }, { "acceptedTransitions", 0 }, { "breach", false },
+            })
+            structuralComparison = {
+                status = "error", breach = false, confidence = "Unavailable", transitions = {}, ambiguous = {},
+            }
+        end
+        session.wakeEvidence.structural = {
+            status = structuralComparison.status,
+            breach = structuralComparison.breach == true,
+            confidence = structuralComparison.confidence,
+            comparedEntries = structuralComparison.comparedEntries or 0,
+            unavailableEntries = structuralComparison.unavailableEntries or 0,
+            acceptedTransitions = structuralComparison.transitions and #structuralComparison.transitions or 0,
+            ambiguousEntries = structuralComparison.ambiguous and #structuralComparison.ambiguous or 0,
+        }
+        session.structuralSnapshot = nil
+    else
+        session.wakeEvidence.structural = {
+            status = session.structuralCaptureStatus or "unavailable",
+            breach = false,
+            confidence = "Unavailable",
+        }
+    end
     local onsetLabel, onsetContributor, onsetDelay, medicationOverride = onsetModel(session)
     session.onsetLabel = onsetLabel
     session.onsetContributor = onsetContributor
@@ -685,7 +851,15 @@ local function finaliseSleepSession(playerObj)
             .. "; estimate=" .. formatSleepNumber(session.onsetEstimate)
             .. "; medicationOverride=" .. tostring(medicationOverride)
     )
-    session.wakeReason, session.wakeConfidence = classifyWakeReason(session)
+    local strongerReason = nil
+    session.wakeReason, session.wakeConfidence, strongerReason = classifyWakeReason(session)
+    local structuralEvidence = session.wakeEvidence.structural or {}
+    session.wakeEvidence.structuralBreachObserved = structuralEvidence.breach == true
+    logStructuralEvent(session.structuralSessionId, playerObj:getPlayerNum() or 0, "CLASSIFY", {
+        { "earlyWake", wasWokenEarly(session) == true }, { "structuralStatus", structuralEvidence.status },
+        { "structuralObserved", structuralEvidence.breach == true }, { "strongerReason", strongerReason },
+        { "selectedReason", session.wakeReason }, { "confidence", session.wakeConfidence },
+    })
     local lastAsleepEvidence = session.wakeEvidence.lastAsleep or session.wakeEvidence.start
     local wakeEvidence = session.wakeEvidence.firstWake
     if lastAsleepEvidence and wakeEvidence then
@@ -823,16 +997,66 @@ local function getNutritionistTooltip(model)
 
     local toGain = math.max(0, model.gainThreshold - model.calories)
     local toLoss = math.max(0, model.calories - model.lossThreshold)
-    return string.format(
-        "%s: %.0f\n%s: %.0f\n%s: %.0f\n%s: %.0f\n%s: %.0f\n%s: %.0f\n%s: x%d",
+    local lines = {
+        string.format(
+        "%s: %.0f\n%s: %.0f\n%s: %.0f\n%s: %.0f\n%s: %.0f\n%s: %.0f",
         getTextSafe("UI_QoLforSacriel_FitnessTooltip_Calories", "Calories"), model.calories,
         getTextSafe("UI_QoLforSacriel_FitnessTooltip_Protein", "Protein"), model.proteins,
         getTextSafe("UI_QoLforSacriel_FitnessTooltip_Lipids", "Lipids"), model.lipids,
         getTextSafe("UI_QoLforSacriel_FitnessTooltip_GainGap", "Calories to gain"), toGain,
         getTextSafe("UI_QoLforSacriel_FitnessTooltip_LossGap", "Calories to loss"), toLoss,
-        getTextSafe("UI_QoLforSacriel_FitnessTooltip_GainThreshold", "Gain threshold"), model.gainThreshold,
-        getTextSafe("UI_QoLforSacriel_FitnessTooltip_GainMultiplier", "Gain multiplier"), model.gainMultiplier
+        getTextSafe("UI_QoLforSacriel_FitnessTooltip_GainThreshold", "Gain threshold"), model.gainThreshold
+        ),
+    }
+    if model.gainMultiplier > 1 then
+        lines[#lines + 1] = getTextSafe("UI_QoLforSacriel_FitnessTooltip_GainMultiplier", "Gain multiplier") .. ": x" .. tostring(model.gainMultiplier)
+    end
+    lines[#lines + 1] = string.format(
+        "%s: %.2f kg\n%s: %+.2f kg",
+        getTextSafe("UI_QoLforSacriel_FitnessTooltip_EstimatedWeight24h", "Estimated weight (24h)"), model.estimatedWeight24h,
+        getTextSafe("UI_QoLforSacriel_FitnessTooltip_EstimatedChange24h", "Estimated change (24h)"), model.estimatedChange24h
     )
+    return table.concat(lines, "\n")
+end
+
+local function removeNutritionTooltip(hover)
+    if not hover or not hover.tooltipUI then return end
+    hover.tooltipUI:setVisible(false)
+    hover.tooltipUI:removeFromUIManager()
+    hover.tooltipUI = nil
+end
+
+function NutritionBalanceHover:render()
+    local model = self.ownerPanel and self.ownerPanel.model or nil
+    local message = model and model.available and getNutritionistTooltip(model) or nil
+    if not message or (self.tooltipUI and self.tooltipUI:isMouseOver()) or not self:isMouseOver() then
+        removeNutritionTooltip(self)
+        return
+    end
+    if not self.tooltipUI then
+        self.tooltipUI = ISToolTip:new()
+        self.tooltipUI:initialise()
+        self.tooltipUI.backgroundColor = { r = 0.05, g = 0.05, b = 0.05, a = 1 }
+        self.tooltipUI:addToUIManager()
+        self.tooltipUI:setOwner(self)
+    end
+    self.tooltipUI.description = string.gsub(message, "\n", " <LINE>")
+    self.tooltipUI:setDesiredPosition(self:getAbsoluteX(), self:getAbsoluteY() + self:getHeight() + 8)
+end
+
+function NutritionBalanceHover:onMouseMoveOutside()
+    removeNutritionTooltip(self)
+end
+
+function NutritionBalanceHover:new(ownerPanel)
+    local width = BALANCE_CELL_COUNT * (BALANCE_CELL_WIDTH + 2) - 2
+    local hover = ISPanel:new(UI_BORDER_SPACING, UI_BORDER_SPACING + 20, width, BALANCE_CELL_HEIGHT)
+    setmetatable(hover, self)
+    self.__index = self
+    hover.ownerPanel = ownerPanel
+    hover.tooltipUI = nil
+    hover:noBackground()
+    return hover
 end
 
 local function getNutritionModel(playerObj)
@@ -865,6 +1089,14 @@ local function getNutritionModel(playerObj)
         gainMultiplier = 3
     elseif carbohydrates > 400 or lipids > 400 then
         gainMultiplier = 2
+    end
+    local estimatedChange24h = 0
+    if calories > gainThreshold then
+        local gainScale = math.min(calories / 4000, 1)
+        estimatedChange24h = WEIGHT_GAIN_PER_GAME_SECOND * gainMultiplier * gainScale * GAME_SECONDS_PER_DAY
+    elseif calories < lossThreshold then
+        local lossScale = math.min(math.abs(calories) / 2500, 1)
+        estimatedChange24h = -WEIGHT_LOSS_PER_GAME_SECOND * lossScale * GAME_SECONDS_PER_DAY
     end
 
     local strengthColor = "red"
@@ -906,6 +1138,8 @@ local function getNutritionModel(playerObj)
         balanceIndex = balanceIndex,
         balanceLabel = balanceLabel,
         calories = calories,
+        estimatedChange24h = estimatedChange24h,
+        estimatedWeight24h = weight + estimatedChange24h,
         carbohydrates = carbohydrates,
         gainMultiplier = gainMultiplier,
         gainThreshold = gainThreshold,
@@ -974,7 +1208,13 @@ end
 
 function FitnessNutritionPanel:refreshModel()
     self.model = getNutritionModel(self.playerObj)
-    self.tooltip = self.model.available and getNutritionistTooltip(self.model) or nil
+end
+
+function FitnessNutritionPanel:initialise()
+    ISPanel.initialise(self)
+    self.nutritionBalanceHover = NutritionBalanceHover:new(self)
+    self.nutritionBalanceHover:initialise()
+    self:addChild(self.nutritionBalanceHover)
 end
 
 function FitnessNutritionPanel:prerender()
@@ -1011,7 +1251,7 @@ function FitnessNutritionPanel:render()
     y = y + 20
     for index = 1, BALANCE_CELL_COUNT do
         local color = COLORS.neutral
-        if model.available and not model.balanceIndex and (index == 5 or index == 6) then
+        if model.available and not model.balanceIndex and index == 5 then
             color = COLORS.grey
         elseif model.available and model.balanceIndex == index then
             color = index <= 4 and COLORS.red or COLORS.green
@@ -1212,12 +1452,16 @@ local function removeFitnessView(window)
     if not window or not window.panel or not window.fitnessNutritionView then
         return
     end
+    removeNutritionTooltip(window.fitnessNutritionView.nutritionBalanceHover)
     window.panel:removeView(window.fitnessNutritionView)
     window.fitnessNutritionView = nil
     logDebug("Fitness tab removed")
 end
 
 local function beginContextSleepSession(playerIndex)
+    if not isEnabled() then
+        return
+    end
     local playerObj = getSpecificPlayer and getSpecificPlayer(playerIndex) or nil
     if not playerObj or not readBoolean(playerObj, "isAsleep") then
         logDebug("context sleep completion did not enter sleep for player " .. tostring(playerIndex))
@@ -1250,7 +1494,7 @@ local function installSleepWrappers()
     if not sleepDialogWrapped and ISSleepDialog and ISSleepDialog.onClick then
         originalSleepDialogOnClick = ISSleepDialog.onClick
         ISSleepDialog.onClick = function(dialog, button)
-            if button and button.internal == "YES" and dialog.player and dialog.spinBox then
+            if isEnabled() and button and button.internal == "YES" and dialog.player and dialog.spinBox then
                 beginSleepSession(dialog.player, dialog.spinBox.selected)
             end
             return originalSleepDialogOnClick(dialog, button)
@@ -1261,7 +1505,9 @@ local function installSleepWrappers()
     if not contextSleepWrapped and ISWorldObjectContextMenu and ISWorldObjectContextMenu.onSleep then
         originalContextSleep = ISWorldObjectContextMenu.onSleep
         ISWorldObjectContextMenu.onSleep = function(bed, playerIndex)
-            logDebug("context sleep opened for player index " .. tostring(playerIndex))
+            if isEnabled() then
+                logDebug("context sleep opened for player index " .. tostring(playerIndex))
+            end
             return originalContextSleep(bed, playerIndex)
         end
         contextSleepWrapped = true
@@ -1315,7 +1561,7 @@ function FitnessNutritionIndicator.init(settings, logger)
             local playerNum = playerObj:getPlayerNum() or 0
             local window = getPlayerInfoPanel and getPlayerInfoPanel(playerNum) or nil
             if not isEnabled() or playerObj:isDead() then
-                sleepSessions[playerNum] = nil
+                discardSleepSession(playerNum, playerObj:isDead() and "death" or "disabled")
                 if window then
                     removeFitnessView(window)
                 end
@@ -1323,7 +1569,7 @@ function FitnessNutritionIndicator.init(settings, logger)
             end
             local session = sleepSessions[playerNum]
             if session and session.start and getWorldAgeHours() < (session.start.worldAge or 0) then
-                sleepSessions[playerNum] = nil
+                discardSleepSession(playerNum, "world-age-reversal")
             end
             updateSleepSession(playerObj)
             if window then

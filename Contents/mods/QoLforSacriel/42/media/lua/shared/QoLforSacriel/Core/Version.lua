@@ -1,6 +1,6 @@
 -- ff-assisted
 QoLforSacriel_Version = {
-    runtime = "qolfs-nearest-bed-explicit-quality-2026-08-25-v339"
+    runtime = "qolfs-sleep-quality-panel-2026-08-28-v350"
 }
 
 return QoLforSacriel_Version
