@@ -334,18 +334,8 @@ local function getBedLabel(playerObj, candidate)
         .. " | " .. string.format("%.1f %s", math.sqrt(candidate.distanceSquared), distanceLabel)
 end
 
-local function isEligibleBedObject(bed, quality)
-    if not bed or type(quality) ~= "string" then
-        return false
-    end
-
-    local properties = bed.getProperties and bed:getProperties() or nil
-    if not properties or not properties:has("BedType") then
-        return false
-    end
-
-    local declaredQuality = tostring(properties:get("BedType") or "")
-    if declaredQuality ~= "averageBed" and declaredQuality ~= "goodBed" then
+local function isEligibleBedQuality(quality)
+    if type(quality) ~= "string" then
         return false
     end
 
@@ -379,7 +369,7 @@ local function findNearbyBeds(playerObj)
                 local bedQuality = qualityOk and tostring(quality) or nil
                 local distanceSquared = (x - playerX) * (x - playerX) + (y - playerY) * (y - playerY)
                 if distanceSquared <= NEARBY_BED_RADIUS * NEARBY_BED_RADIUS
-                and isEligibleBedObject(bed, bedQuality)
+                and isEligibleBedQuality(bedQuality)
                 then
                     order = order + 1
                     table.insert(candidates, {
@@ -439,14 +429,16 @@ local function addNearbyBedSleepOption(playerIndex, context, settings, logger)
         return
     end
 
-    local root = context:addOption(getTextSafe("UI_QoLforSacriel_SleepNearestBed", "Sleep in nearest bed"))
+    local rootLabel = getTextSafe("UI_QoLforSacriel_SleepNearestBed", "Sleep in nearest bed")
     if #beds == 1 then
+        local root = context:addOption(rootLabel .. " | " .. getBedLabel(playerObj, beds[1]))
         root.onSelect = function()
             selectNearbyBedSleep(playerObj, beds[1].bed, logger)
         end
         return
     end
 
+    local root = context:addOption(rootLabel)
     local subMenu = context:getNew(context)
     context:addSubMenu(root, subMenu)
     for _, candidate in ipairs(beds) do
